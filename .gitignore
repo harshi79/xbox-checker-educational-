@@ -4,6 +4,9 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+.ruff_cache/
+.pytest_cache/
+.coverage
 
 # Local databases & env
 data/
@@ -16,6 +19,10 @@ data/
 .vscode/
 .idea/
 .DS_Store
+
+# Node/browser QA
+node_modules/
+npm-debug.log*
 
 # Test artifacts
 /tmp/

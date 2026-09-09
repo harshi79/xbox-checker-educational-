@@ -1,18 +1,23 @@
-"""Daily per-user rate limiting backed by the ``daily_usage`` table."""
+"""Compatibility daily quota metadata backed by the ``daily_usage`` table."""
 
 import os
-from datetime import date
+from datetime import datetime, timezone
 
-from .db import execute, fetchone
+from .db import fetchone
+
+_DEFAULT_LIMITS = {"free": 100, "premium": 1000, "pro": 999_999}
 
 
 def _limit_for(tier: str) -> int:
     tier = (tier or "free").lower()
-    if tier == "premium":
-        return int(os.environ.get("PREMIUM_DAILY_LIMIT", 1000))
-    if tier == "pro":
-        return int(os.environ.get("PRO_DAILY_LIMIT", 999999))
-    return int(os.environ.get("FREE_DAILY_LIMIT", 100))
+    if tier not in _DEFAULT_LIMITS:
+        tier = "free"
+    name = f"{tier.upper()}_DAILY_LIMIT"
+    try:
+        value = int(os.environ.get(name, str(_DEFAULT_LIMITS[tier])))
+    except (TypeError, ValueError):
+        value = _DEFAULT_LIMITS[tier]
+    return max(0, min(value, 100_000_000))
 
 
 # Backwards-compatible snapshot evaluated at import time.
@@ -32,41 +37,43 @@ def tier_limit(tier: str) -> int:
 
 
 async def check_and_increment(user_id: int, tier: str) -> tuple[bool, int]:
-    """Atomically consume one check from the user's daily quota.
+    """Atomically consume one metered operation from the daily quota.
 
-    Returns ``(allowed, remaining)`` where ``remaining`` is the quota left
-    *after* this check (0 when denied).
+    Retained for compatible educational API extensions. The retired credential
+    endpoint never calls this helper. Returns ``(allowed, remaining)`` where
+    ``remaining`` is the quota left after this operation (0 when denied).
     """
-    today = date.today().isoformat()
+    today = datetime.now(timezone.utc).date().isoformat()
     limit = tier_limit(tier)
-
-    row = await fetchone(
-        "SELECT count FROM daily_usage WHERE user_id = ? AND check_date = ?",
-        user_id,
-        today,
-    )
-    current = int(row["count"]) if row and row.get("count") is not None else 0
-    if current >= limit:
+    if limit <= 0:
         return False, 0
 
-    await execute(
+    # One statement makes the quota decision and increment atomic across
+    # concurrent Vercel instances. The former SELECT-then-UPDATE sequence could
+    # admit several requests at the final slot.
+    row = await fetchone(
         """
         INSERT INTO daily_usage (user_id, check_date, count, tier_limit)
         VALUES (?, ?, 1, ?)
         ON CONFLICT(user_id, check_date) DO UPDATE SET
-            count = count + 1,
+            count = daily_usage.count + 1,
             tier_limit = excluded.tier_limit
+        WHERE daily_usage.count < excluded.tier_limit
+        RETURNING count
         """,
         user_id,
         today,
         limit,
     )
-    return True, limit - current - 1
+    if not row:
+        return False, 0
+    used = int(row.get("count", limit))
+    return True, max(0, limit - used)
 
 
 async def current_usage(user_id: int, tier: str) -> tuple[int, int]:
     """Return ``(used, limit)`` for today without consuming quota."""
-    today = date.today().isoformat()
+    today = datetime.now(timezone.utc).date().isoformat()
     limit = tier_limit(tier)
     row = await fetchone(
         "SELECT count FROM daily_usage WHERE user_id = ? AND check_date = ?",

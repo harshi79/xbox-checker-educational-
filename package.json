@@ -1,0 +1,18 @@
+{
+  "name": "xbox-profile-lab-qa",
+  "private": true,
+  "version": "2.0.0",
+  "description": "Development-only browser QA harness for Xbox Profile Lab",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "npm run test:frontend",
+    "test:frontend": "node qa-frontend.test.js",
+    "test:live": "node qa-live.test.js",
+    "preview:qa": "node qa-mock-preview.mjs"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  }
+}

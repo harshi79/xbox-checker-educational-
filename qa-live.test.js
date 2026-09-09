@@ -1,35 +1,32 @@
 /**
- * Live integration QA — loads the REAL static/index.html in jsdom and points its
- * fetch() at the running mock server over real HTTP. Exercises the true network
- * path: real status codes, real JSON bodies, real Web Crypto verification.
+ * Live frontend integration QA against qa-mock-preview.mjs.
  *
- * Run (start the mock first):
- *   npm install --no-save --prefix /tmp/jstest jsdom
- *   node qa-mock-preview.mjs &
- *   node qa-live.test.js
+ * Run: node qa-mock-preview.mjs &
+ *      node qa-live.test.js
  */
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { JSDOM, VirtualConsole } = require('/tmp/jstest/node_modules/jsdom');
+const { JSDOM, VirtualConsole } = require('jsdom');
 
 const BASE = 'http://localhost:8080';
 const HTML = fs.readFileSync(path.resolve(__dirname, 'static/index.html'), 'utf8');
-
 let pass = 0, fail = 0;
 const failures = [];
-function ok(n, c, x) {
-  if (c) { pass++; console.log('  \x1b[32mPASS\x1b[0m ' + n); }
-  else { fail++; failures.push(n); console.log('  \x1b[31mFAIL\x1b[0m ' + n + (x ? '\n        -> ' + x : '')); }
+
+function ok(name, condition, detail = '') {
+  if (condition) { pass++; console.log('  \x1b[32mPASS\x1b[0m ' + name); }
+  else { fail++; failures.push(name); console.log('  \x1b[31mFAIL\x1b[0m ' + name + (detail ? '\n        -> ' + detail : '')); }
 }
-function section(t) { console.log('\n\x1b[1m' + t + '\x1b[0m'); }
+function section(title) { console.log('\n\x1b[1m' + title + '\x1b[0m'); }
 
 function makeDom(preset) {
   const pageErrors = [];
+  const requests = [];
   const vc = new VirtualConsole();
-  vc.on('jsdomError', e => { if (!/Not implemented/.test(e.message)) pageErrors.push(e.message); });
+  vc.on('jsdomError', error => { if (!/Not implemented/.test(error.message)) pageErrors.push(error.message); });
   const dom = new JSDOM(HTML, {
-    url: BASE + '/static/index.html',
+    url: BASE + '/',
     runScripts: 'dangerously',
     pretendToBeVisual: true,
     virtualConsole: vc,
@@ -37,175 +34,145 @@ function makeDom(preset) {
       Object.defineProperty(window, 'crypto', { value: crypto.webcrypto, configurable: true });
       Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
       window.TextEncoder = TextEncoder;
-      window.TextDecoder = TextDecoder;
       window.AbortController = AbortController;
       window.Element.prototype.scrollIntoView = function () {};
-      // REAL fetch — only relative URLs are absolutised.
-      window.fetch = (u, init) => globalThis.fetch(new URL(u, BASE).href, init);
-      if (preset) Object.keys(preset).forEach(k => window.localStorage.setItem(k, preset[k]));
+      let cookie = '';
+      window.fetch = async (input, init = {}) => {
+        const target = new URL(input, BASE).href;
+        init = Object.assign({}, init);
+        init.headers = Object.assign({}, init.headers || {});
+        if (cookie) init.headers.Cookie = cookie;
+        requests.push({ url: target, method: init.method || 'GET', headers: init.headers, body: init.body || null });
+        const response = await globalThis.fetch(target, init);
+        const setCookie = response.headers.get('set-cookie');
+        if (setCookie && /^xb_session=/.test(setCookie)) {
+          cookie = /Max-Age=0/i.test(setCookie) ? '' : setCookie.split(';', 1)[0];
+        }
+        return response;
+      };
+      if (preset) Object.entries(preset).forEach(([k, v]) => window.localStorage.setItem(k, v));
     }
   });
-  return { document: dom.window.document, window: dom.window, pageErrors };
+  return { document: dom.window.document, window: dom.window, requests, pageErrors };
 }
 
-const tick = (n = 30) => new Promise(r => { let i = 0; (function s() { i++ >= n ? r() : setTimeout(s, 0); })(); });
+const tick = (n = 45) => new Promise(resolve => { let i = 0; (function next() { if (i++ >= n) return resolve(); setTimeout(next, 0); })(); });
 const $ = (d, id) => d.getElementById(id);
-const txt = (d, id) => ($(d, id) ? $(d, id).textContent.trim() : null);
+const text = (d, id) => ($(d, id) ? $(d, id).textContent.trim() : '');
 const hidden = (d, id) => $(d, id).classList.contains('hidden');
 const click = (d, id) => $(d, id).dispatchEvent(new d.defaultView.MouseEvent('click', { bubbles: true, cancelable: true }));
 const submit = (d, id) => $(d, id).dispatchEvent(new d.defaultView.Event('submit', { bubbles: true, cancelable: true }));
-const set = (d, id, v) => { $(d, id).value = v; };
-const uniq = () => 'live' + Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36);
+const set = (d, id, value) => { $(d, id).value = value; };
+const unique = () => 'live-' + Date.now().toString(36) + '-' + crypto.randomBytes(3).toString('hex');
 
-async function loginAs(d, w, email, pass) {
-  click(d, 'tab-login');
-  set(d, 'login-email', email); set(d, 'login-pass', pass);
-  submit(d, 'login-form');
-  await tick(60);
+async function login(document, email, password = 'password123') {
+  click(document, 'tab-login');
+  set(document, 'login-email', email);
+  set(document, 'login-pass', password);
+  submit(document, 'login-form');
+  await tick(70);
 }
 
 (async () => {
-  section('A. Live: registration over real HTTP');
-  let key = null;
+  section('A. Registration over real HTTP + cookie session');
   {
-    const { document: d, window: w, pageErrors } = makeDom();
-    await tick(30);
-    const email = uniq() + '@example.com';
-    const device = crypto.randomBytes(8).toString('hex');   // jsdom has no canvas -> fp is constant, so vary it
-    set(d, 'reg-email', email); set(d, 'reg-pass', 'password123');
-    set(d, 'reg-fp', device);
+    const { document: d, window: w, requests, pageErrors } = makeDom({ xbsp_api_key: 'OLD_LEAKED_KEY' });
+    await tick();
+    const email = unique() + '@example.com';
+    set(d, 'reg-email', email);
+    set(d, 'reg-pass', 'password123');
+    set(d, 'reg-fp', crypto.randomBytes(8).toString('hex'));
     submit(d, 'register-form');
-    await tick(80);
-    ok('registration succeeds against the live endpoint', !hidden(d, 'dashboard'), txt(d, 'auth-msg'));
-    key = txt(d, 'api-key');
-    ok('live API key rendered in full', /^xbp_[0-9a-f]{20}$/.test(key || ''), key);
-    ok('live tier badge = FREE', txt(d, 'tier-badge') === 'FREE', txt(d, 'tier-badge'));
-    ok('live usage = 0 / 10', txt(d, 'usage') === '0 / 10 checks today', txt(d, 'usage'));
+    await tick(90);
+    ok('registration opens dashboard', !hidden(d, 'dashboard'), text(d, 'auth-msg'));
+    ok('profile email comes from backend DB', text(d, 'profile-email') === email, text(d, 'profile-email'));
+    ok('new user starts disconnected', /Not connected/.test(text(d, 'xbox-status')), text(d, 'xbox-status'));
+    ok('API key shown but not stored in localStorage', /^xbp_[0-9a-f]{20}$/.test(text(d, 'api-key')) && w.localStorage.getItem('xbsp_api_key') === null, text(d, 'api-key'));
+    ok('protected calls carry a cookie, not Authorization', requests.some(r => r.url.endsWith('/user/me') && r.headers.Cookie && !r.headers.Authorization));
+    ok('no page errors', pageErrors.length === 0, JSON.stringify(pageErrors));
+  }
+
+  section('B. Login shows consented Xbox snapshot');
+  {
+    const { document: d, requests, pageErrors } = makeDom();
+    await tick();
+    await login(d, 'demo@example.com');
+    ok('login opens dashboard', !hidden(d, 'dashboard'), text(d, 'auth-msg'));
+    ok('premium workspace tier renders', text(d, 'tier-badge') === 'PREMIUM', text(d, 'tier-badge'));
+    ok('connected profile badge renders', /Xbox profile connected/.test(text(d, 'xbox-status')), text(d, 'xbox-status'));
+    ok('gamertag and gamerscore render from API', /ConsentPlayer/.test(text(d, 'xbox-result')) && /9876/.test(text(d, 'xbox-result')), text(d, 'xbox-result'));
+    ok('signature is present without browser shared secret', /Server signature present/.test(text(d, 'xbox-result')));
+    ok('OAuth refresh points to backend route', $(d, 'btn-ms-connect').getAttribute('href') === '/microsoft/connect');
+    ok('no target password/proxy request is sent', !requests.some(r => r.url.endsWith('/check')));
     ok('no page errors', pageErrors.length === 0, JSON.stringify(pageErrors));
 
-    section('B. Live: duplicate registration surfaces the server 409');
+    click(d, 'btn-ms-disconnect');
+    await tick(60);
+    ok('disconnect updates backend and UI', /Not connected/.test(text(d, 'xbox-status')) && hidden(d, 'btn-ms-disconnect'), text(d, 'xbox-status'));
+  }
+
+  section('C. Session restore and logout');
+  {
+    const { document: d, requests, pageErrors } = makeDom();
+    await tick();
+    await login(d, 'admin@example.com');
+    ok('login succeeded before logout', !hidden(d, 'dashboard'));
     click(d, 'btn-logout');
-    click(d, 'tab-register');
-    set(d, 'reg-email', email); set(d, 'reg-pass', 'password123');   // same email, same device
-    submit(d, 'register-form');
+    await tick(55);
+    ok('logout endpoint called', requests.some(r => r.url.endsWith('/auth/logout') && r.method === 'POST'));
+    ok('logout returns to login form', !hidden(d, 'auth-section') && !hidden(d, 'login-form') && hidden(d, 'dashboard'));
+    ok('no blank screen/page error', d.body.textContent.length > 300 && pageErrors.length === 0, JSON.stringify(pageErrors));
+  }
+
+  section('D. API-key rotation remains available for programmatic clients');
+  {
+    const { document: d, window: w } = makeDom();
+    await tick();
+    await login(d, 'admin@example.com');
+    const oldKey = 'xbp_admin_9999888877776666';
+    ok('login restores only a safe key preview', /…/.test(text(d, 'api-key')) && !text(d, 'api-key').includes(oldKey));
+    click(d, 'btn-revoke'); click(d, 'btn-revoke-yes');
     await tick(60);
-    ok('409 conflict message shown (req 9)', /already exists/i.test(txt(d, 'auth-msg')), txt(d, 'auth-msg'));
+    const newKey = text(d, 'api-key');
+    ok('rotation issues a different full key once', newKey !== oldKey && /^xbp_[0-9a-f]{20}$/.test(newKey), oldKey + ' -> ' + newKey);
+    ok('rotated key is not persisted in browser storage', w.localStorage.getItem('xbsp_api_key') === null);
+    const oldResponse = await globalThis.fetch(BASE + '/user/me', { headers: { Authorization: 'Bearer ' + oldKey } });
+    const newResponse = await globalThis.fetch(BASE + '/user/me', { headers: { Authorization: 'Bearer ' + newKey } });
+    ok('old key is rejected at HTTP layer', oldResponse.status === 401, String(oldResponse.status));
+    ok('new key authenticates at HTTP layer', newResponse.status === 200, String(newResponse.status));
   }
 
-  section('C. Live: login + full check cycle with a VALID signature');
+  section('E. Admin table');
   {
-    const { document: d, window: w, pageErrors } = makeDom();
-    await tick(30);
-    await loginAs(d, w, 'demo@example.com', 'password123');
-    ok('login lands on the dashboard', !hidden(d, 'dashboard'), txt(d, 'auth-msg'));
-    ok('premium badge from live login', txt(d, 'tier-badge') === 'PREMIUM', txt(d, 'tier-badge'));
-
-    const usageBefore = parseInt((txt(d, 'usage') || '0').split('/')[0].trim(), 10);
-    set(d, 'check-email', 'player@hit.example.com');
-    set(d, 'check-pass', 'secretpw');
-    set(d, 'check-proxies', 'http://u:p@1.2.3.4:8080\r\nsocks5://5.6.7.8:1080\r\n');
-    submit(d, 'check-form');
-    await tick(120);
-    const res = d.getElementById('result');
-    ok('status "hit" rendered', /\bhit\b/.test(res.textContent), res.textContent.slice(0, 200));
-    ok('watermark rendered exactly as "Provided by @yorichiiprime"', /Provided by @yorichiiprime/.test(res.textContent));
-    ok('watermark match pill is green', res.querySelector('.pill.ok') !== null);
-    ok('client-side HMAC verification GREEN against the live server (req 8)',
-      /Signature valid/.test(res.textContent), res.textContent.slice(0, 400));
-    ok('no red/mismatch pill on a genuine response', res.querySelector('.pill.bad') === null);
-    ok('gamertag from payload shown in raw JSON', /DemoPlayer/.test(res.textContent));
-    const usageAfter = parseInt((txt(d, 'usage') || '0').split('/')[0].trim(), 10);
-    ok('usage counter incremented by exactly 1 after a check',
-      usageAfter === usageBefore + 1, usageBefore + ' -> ' + usageAfter + ' (' + txt(d, 'usage') + ')');
-    ok('no page errors during a live check', pageErrors.length === 0, JSON.stringify(pageErrors));
+    const { document: d, pageErrors } = makeDom();
+    await tick(); click(d, 'admin-trigger');
+    set(d, 'admin-key', 'wrong'); submit(d, 'admin-form'); await tick(35);
+    ok('wrong admin key shows 403 detail', /Invalid admin key/.test(text(d, 'admin-msg')), text(d, 'admin-msg'));
+    set(d, 'admin-key', 'demo-admin-key'); submit(d, 'admin-form'); await tick(55);
+    const output = $(d, 'admin-output');
+    ok('admin users render in a table', !!output.querySelector('table'));
+    ok('seed users are listed', /demo@example\.com/.test(output.textContent) && /free@example\.com/.test(output.textContent));
+    ok('only key previews are shown', !/xbp_admin_9999888877776666/.test(output.textContent));
+    ok('no device fingerprints are shown', !/ffeeddccbbaa9988/.test(output.textContent));
+    ok('no admin page errors', pageErrors.length === 0, JSON.stringify(pageErrors));
   }
 
-  section('D. Live: rate limit (429) is user-friendly');
+  section('F. Legacy credential endpoint is retired');
   {
-    const { document: d, window: w, pageErrors } = makeDom();
-    await tick(30);
-    await loginAs(d, w, 'free@example.com', 'password123');
-    ok('free account logs in', !hidden(d, 'dashboard'));
-    set(d, 'check-email', 'someone@example.com'); set(d, 'check-pass', 'pw');
-    submit(d, 'check-form');
-    await tick(100);
-    ok('429 renders the server message in the result area',
-      /Daily limit reached/i.test(d.getElementById('result').textContent), d.getElementById('result').textContent.slice(0, 200));
-    ok('result is not stuck on "Running check…"', !/Running check/.test(d.getElementById('result').textContent));
-    ok('check button re-enabled after 429', !d.getElementById('btn-check').disabled);
-    ok('no page errors on 429', pageErrors.length === 0, JSON.stringify(pageErrors));
-  }
-
-  section('E. Live: regenerate key — old key really dies');
-  {
-    const { document: d, window: w, pageErrors } = makeDom();
-    await tick(30);
-    await loginAs(d, w, 'demo@example.com', 'password123');
-    const oldKey = txt(d, 'api-key');
-    click(d, 'btn-revoke');
-    click(d, 'btn-revoke-yes');
-    await tick(80);
-    const newKey = txt(d, 'api-key');
-    ok('a new key was issued', newKey !== oldKey && /^xbp_[0-9a-f]{20}$/.test(newKey), oldKey + ' -> ' + newKey);
-    ok('localStorage swapped to the new key', w.localStorage.getItem('xbsp_api_key') === newKey);
-
-    // Verify at the HTTP level that the OLD key is dead.
-    const oldRes = await globalThis.fetch(BASE + '/user/me', { headers: { Authorization: 'Bearer ' + oldKey } });
-    const newRes = await globalThis.fetch(BASE + '/user/me', { headers: { Authorization: 'Bearer ' + newKey } });
-    ok('OLD key now returns 401 from the server (req 4)', oldRes.status === 401, 'status=' + oldRes.status);
-    ok('NEW key works (req 4)', newRes.status === 200, 'status=' + newRes.status);
-    ok('dashboard still healthy after rotation', txt(d, 'tier-badge') === 'PREMIUM');
-    ok('no page errors during rotation', pageErrors.length === 0, JSON.stringify(pageErrors));
-  }
-
-  section('F. Live: admin panel');
-  {
-    const { document: d, window: w, pageErrors } = makeDom();
-    await tick(30);
-    ok('admin hidden before unlock (req 6)', hidden(d, 'admin-section'));
-    click(d, 'admin-trigger');
-    set(d, 'admin-key', 'wrong-key');
-    submit(d, 'admin-form');
-    await tick(60);
-    ok('wrong admin key -> friendly 403', /Invalid admin key/.test(txt(d, 'admin-msg')), txt(d, 'admin-msg'));
-
-    set(d, 'admin-key', 'demo-admin-key');
-    submit(d, 'admin-form');
-    await tick(80);
-    const out = d.getElementById('admin-output');
-    ok('admin table rendered', out.querySelector('table') !== null);
-    ok('seed users listed', /admin@example\.com/.test(out.textContent) && /free@example\.com/.test(out.textContent));
-    ok('usage/limit columns present', /daily usage/.test(out.textContent) && /daily limit/.test(out.textContent));
-    ok('API keys masked in admin table', !/xbp_admin_9999888877776666/.test(out.textContent));
-    ok('device fingerprints masked', !/ffeeddccbbaa9988/.test(out.textContent));
-    ok('no page errors in admin flow', pageErrors.length === 0, JSON.stringify(pageErrors));
-  }
-
-  section('G. Live: a stale/revoked key in storage recovers gracefully');
-  {
-    const first = makeDom();
-    await tick(30);
-    await loginAs(first.document, first.window, 'demo@example.com', 'password123');
-    const staleKey = txt(first.document, 'api-key');
-    await globalThis.fetch(BASE + '/user/key/revoke', { method: 'POST', headers: { Authorization: 'Bearer ' + staleKey } });
-
-    const { document: d, window: w, pageErrors } = makeDom({ xbsp_api_key: staleKey });
-    await tick(80);
-    const probe = await globalThis.fetch(BASE + '/user/me', { headers: { Authorization: 'Bearer ' + staleKey } });
-    ok('stale key is rejected by the live server (401)', probe.status === 401, 'status=' + probe.status);
-    ok('user is bounced back to the login screen, not a blank dashboard',
-      !hidden(d, 'auth-section') && hidden(d, 'dashboard'));
-    ok('a clear "session no longer valid" message is shown',
-      /no longer valid/i.test(txt(d, 'auth-msg')), txt(d, 'auth-msg'));
-    ok('the dead key is purged from storage', w.localStorage.getItem('xbsp_api_key') === null);
-    ok('the page is still fully interactive (no blank screen)',
-      d.body.textContent.trim().length > 200 && d.getElementById('login-email') !== null);
-    ok('no page errors on the stale-key path', pageErrors.length === 0, JSON.stringify(pageErrors));
+    // The QA fixture returns the retirement response directly. Production's
+    // authenticated compatibility behavior is covered by backend integration.
+    const response = await globalThis.fetch(BASE + '/check', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'x@example.com', password: 'never-send-this' })
+    });
+    ok('fixture returns 410 for legacy endpoint', response.status === 410, String(response.status));
+    ok('production HTML has no checker password field', !/id="check-pass"|id="check-proxies"/.test(HTML));
+    ok('production HTML contains no QA demo credentials', !/demo@example\.com/.test(HTML));
   }
 
   console.log('\n' + '='.repeat(60));
   console.log(`  \x1b[1m${pass} passed, ${fail} failed\x1b[0m   (live HTTP against ${BASE})`);
-  if (failures.length) { console.log('\n  Failures:'); failures.forEach(f => console.log('   - ' + f)); }
+  if (failures.length) { console.log('\n  Failures:'); failures.forEach(item => console.log('   - ' + item)); }
   console.log('='.repeat(60));
   process.exit(fail ? 1 : 0);
-})().catch(e => { console.error('HARNESS CRASH:', e); process.exit(2); });
+})().catch(error => { console.error('HARNESS CRASH:', error); process.exit(2); });

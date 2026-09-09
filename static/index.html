@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0b0b12">
-<meta name="description" content="Xbox Checker SaaS demonstration console — accounts, tiers, rate limits, watermarked and signed responses.">
+<meta name="description" content="A consent-based educational Xbox profile portal using backend sessions and Microsoft OAuth.">
 <meta name="referrer" content="no-referrer">
-<title>Xbox Checker SaaS</title>
+<title>Xbox Profile Lab</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%236366f1'/%3E%3Ctext x='16' y='23' font-size='19' text-anchor='middle' fill='white' font-family='sans-serif'%3E%F0%9F%8E%AE%3C/text%3E%3C/svg%3E">
 <style>
   :root {
@@ -123,7 +123,7 @@
   .row-inline input { margin: 0; }
 
   /* ---------- Buttons ---------- */
-  button {
+  button, .button-link {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -139,11 +139,12 @@
     border: 1px solid transparent;
     border-radius: 9px;
     cursor: pointer;
+    text-decoration: none;
     transition: filter .15s, transform .06s, opacity .15s;
   }
-  button:hover:not(:disabled) { filter: brightness(1.12); }
-  button:active:not(:disabled) { transform: translateY(1px); }
-  button:disabled { opacity: .55; cursor: not-allowed; }
+  button:hover:not(:disabled), .button-link:hover { filter: brightness(1.12); }
+  button:active:not(:disabled), .button-link:active { transform: translateY(1px); }
+  button:disabled, .button-link.disabled { opacity: .55; cursor: not-allowed; pointer-events: none; }
   button.secondary { background: #2b2b3a; border-color: var(--border-strong); color: var(--text); }
   button.danger { background: linear-gradient(135deg, #b91c1c, #ef4444); }
   button.ghost { background: transparent; border-color: var(--border-strong); color: var(--muted); font-weight: 600; }
@@ -156,7 +157,7 @@
   }
 
   .btn-row { display: flex; flex-wrap: wrap; gap: .5rem; }
-  .btn-row button { flex: 1 1 180px; width: auto; }
+  .btn-row button, .btn-row .button-link { flex: 1 1 180px; width: auto; }
 
   /* ---------- Tabs ---------- */
   .tabs { display: flex; gap: .35rem; background: #101018; border: 1px solid var(--border); padding: .3rem; border-radius: 10px; margin-bottom: 1rem; }
@@ -298,7 +299,7 @@
     .grid { grid-template-columns: 1fr; }
     .kv { grid-template-columns: 1fr; gap: .15rem; }
     .kv dt { margin-top: .5rem; }
-    .btn-row button { flex: 1 1 100%; }
+    .btn-row button, .btn-row .button-link { flex: 1 1 100%; }
     pre { max-height: 260px; }
   }
 
@@ -311,18 +312,19 @@
 <div class="container">
 
   <header>
-    <h1>🎮 Xbox Checker</h1>
-    <p class="sub">Check Xbox &amp; Microsoft account Game Pass and subscription status — register, manage your API key, and run watermarked, signed checks.</p>
-    <div class="notice" role="note">🔒 Educational project — only check accounts you own or are explicitly authorised to test.</div>
+    <h1>🎮 Xbox Profile Lab</h1>
+    <p class="sub">A secure educational portal for backend authentication, Microsoft OAuth, and consent-based Xbox profile access.</p>
+    <div class="notice" role="note">🔒 Your Microsoft password is never entered here. Connection happens on Microsoft’s official sign-in page, and this app stores only a minimal profile snapshot.</div>
   </header>
 
   <noscript>
-    <div class="noscript"><strong>JavaScript is required.</strong> This console needs JavaScript enabled to authenticate and run checks.</div>
+    <div class="noscript"><strong>JavaScript is required.</strong> This console needs JavaScript enabled to authenticate and manage a Microsoft connection.</div>
   </noscript>
 
   <!-- ============ AUTH ============ -->
   <section id="auth-section" class="card" aria-labelledby="auth-heading">
     <h2 id="auth-heading">Get Started</h2>
+    <p class="hint">Create a local lab workspace login. Do not enter your Microsoft password here; Microsoft authentication happens separately on Microsoft’s domain.</p>
 
     <div class="tabs" role="tablist" aria-label="Authentication mode">
       <button type="button" id="tab-register" role="tab" aria-selected="true" aria-controls="register-form">Register</button>
@@ -336,12 +338,9 @@
       <label for="reg-pass">Password <span class="hint" style="text-transform:none;letter-spacing:0">(min 8 characters)</span></label>
       <input type="password" id="reg-pass" name="password" placeholder="At least 8 characters" autocomplete="new-password" minlength="8" required>
 
-      <label for="reg-fp">Device Fingerprint <span class="hint" style="text-transform:none;letter-spacing:0">(auto-generated)</span></label>
-      <div class="field-row">
-        <input type="text" id="reg-fp" name="device_fingerprint" readonly aria-describedby="fp-hint">
-        <button type="button" class="secondary tiny" id="fp-refresh" title="Regenerate fingerprint">↻</button>
-      </div>
-      <p class="hint" id="fp-hint">Canvas + screen + user-agent hash. One account per device.</p>
+      <label for="reg-fp">Browser Installation ID <span class="hint" style="text-transform:none;letter-spacing:0">(random, local)</span></label>
+      <input type="text" id="reg-fp" name="device_fingerprint" readonly aria-describedby="fp-hint">
+      <p class="hint" id="fp-hint">A random installation identifier helps prevent accidental duplicate sign-ups in this browser. It does not fingerprint canvas, hardware, screen, or user-agent data.</p>
 
       <button type="submit" id="btn-register">Create Account</button>
     </form>
@@ -370,22 +369,27 @@
 
     <div class="grid" style="margin-top:1rem">
       <div class="cell" style="grid-column:1/-1">
-        <div class="k">API Key</div>
+        <div class="k">Developer API Key</div>
         <div class="key-wrap">
           <code id="api-key">—</code>
-          <button type="button" class="secondary tiny" id="btn-copy-key">Copy</button>
+          <button type="button" class="secondary tiny" id="btn-copy-key" disabled>Copy</button>
         </div>
+        <p class="hint">The dashboard uses a secure HttpOnly session. The full API key is shown only after registration or regeneration and is never saved in browser storage.</p>
       </div>
 
       <div class="cell">
-        <div class="k">Tier</div>
+        <div class="k">Workspace tier</div>
         <div class="v"><span id="tier-badge" class="badge unknown">—</span></div>
       </div>
 
       <div class="cell">
-        <div class="k">Usage today</div>
-        <div class="v"><span id="usage">—</span></div>
-        <div class="meter" aria-hidden="true"><span id="usage-bar"></span></div>
+        <div class="k">Signed in as</div>
+        <div class="v" id="profile-email">—</div>
+      </div>
+
+      <div class="cell">
+        <div class="k">Browser session</div>
+        <div class="v"><span class="pill ok">🔒 Backend protected</span></div>
       </div>
     </div>
 
@@ -404,26 +408,25 @@
 
     <hr class="divider">
 
-    <h3>Test Check</h3>
+    <h3>Microsoft &amp; Xbox connection</h3>
+    <p class="hint">Connect only your own account. Microsoft handles credentials and consent; this site never receives your Microsoft password.</p>
 
-    <form id="check-form" novalidate>
-      <label for="check-email">Account Email</label>
-      <input type="text" id="check-email" placeholder="account@example.com" autocomplete="off" spellcheck="false" required>
+    <div id="xbox-status" class="cell" style="margin-top:.9rem" aria-live="polite">
+      <div class="k">Connection status</div>
+      <div class="v">Loading…</div>
+    </div>
 
-      <label for="check-pass">Account Password</label>
-      <div class="field-row">
-        <input type="password" id="check-pass" placeholder="Account password" autocomplete="off" required>
-        <button type="button" class="secondary tiny" id="btn-eye" aria-label="Show password">👁</button>
-      </div>
+    <div class="btn-row" style="margin-top:.75rem">
+      <a id="btn-ms-connect" class="button-link" href="/microsoft/connect">Continue with Microsoft</a>
+      <button type="button" class="secondary hidden" id="btn-ms-disconnect">Disconnect Xbox profile</button>
+    </div>
 
-      <label for="check-proxies">Proxies <span class="hint" style="text-transform:none;letter-spacing:0">(one per line, optional)</span></label>
-      <textarea id="check-proxies" rows="4" placeholder="http://user:pass@host:port&#10;socks5://host:port"></textarea>
-      <p class="hint" id="proxy-count">0 proxies queued</p>
+    <div id="xbox-result" class="result" role="status" aria-live="polite"></div>
 
-      <button type="submit" id="btn-check">🔍 Run Check</button>
-    </form>
-
-    <div id="result" class="result" role="status" aria-live="polite"></div>
+    <div class="notice" style="margin-top:1rem;margin-bottom:0" role="note">
+      <strong>Game Pass status:</strong> Microsoft exposes entitlement checks only to authorized Partner Center publishers. This lab shows no fabricated/test subscription result. You can always verify your plan on
+      <a href="https://account.microsoft.com/services" target="_blank" rel="noopener noreferrer" style="color:inherit">Microsoft Services &amp; subscriptions</a>.
+    </div>
   </section>
 
   <!-- ============ ADMIN (hidden until unlocked) ============ -->
@@ -444,7 +447,7 @@
   </section>
 
   <footer>
-    <span class="watermark">Provided by @yorichiiprime</span> · All checks logged · Use responsibly<br>
+    <span class="watermark">Provided by @yorichiiprime</span> · Consent-based OAuth · Microsoft credentials never collected<br>
     <button type="button" class="admin-trigger" id="admin-trigger">Admin</button>
     <span class="hint" style="display:inline"> · Ctrl/⌘ + Shift + A</span>
   </footer>
@@ -459,15 +462,9 @@
   /* =========================================================
      Configuration (frontend only)
      ========================================================= */
-  var API_BASE = '';                       // same-origin; set an absolute origin if the UI is hosted separately
-  var STORAGE_KEY = 'xbsp_api_key';
+  var API_BASE = '';                       // same-origin; browser auth is an HttpOnly cookie
   var EXPECTED_WATERMARK = 'Provided by @yorichiiprime';
   var REQUEST_TIMEOUT_MS = 60000;
-
-  // Browser-side HMAC secret. NOTE: anything shipped inside the page is public,
-  // so a passing check proves the response shape is consistent — it is NOT proof
-  // of authenticity. Treat it as an integrity/plumbing assertion only.
-  var HMAC_SECRET = 'dev-secret-change-in-prod';
 
   /* =========================================================
      Small utilities
@@ -529,10 +526,10 @@
 
   function validEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v || '').trim()); }
 
-  /* Safe storage wrappers — private modes / disabled storage must not break the page. */
+  /* Storage is used only for a non-secret random installation ID, never auth. */
   function storeGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
   function storeSet(k, v) { try { window.localStorage.setItem(k, v); return true; } catch (e) { return false; } }
-  function storeDel(k) { try { window.localStorage.removeItem(k); } catch (e) {} }
+  function storeRemove(k) { try { window.localStorage.removeItem(k); } catch (e) {} }
 
   /* =========================================================
      API client with full error handling
@@ -558,8 +555,8 @@
       case 401: return 'Not authorised — your credentials or API key are not valid.';
       case 403: return 'Forbidden — this account is not allowed to perform that action.';
       case 404: return 'Not found — that endpoint or resource does not exist.';
-      case 409: return 'Conflict — that resource already exists (an account for this email or device may already be registered).';
-      case 413: return 'Request too large — reduce the number of proxies and try again.';
+      case 409: return 'Conflict — an account for this email or browser installation may already exist.';
+      case 413: return 'Request too large — reduce the submitted data and try again.';
       case 422: return 'Validation failed — one or more fields are in the wrong format.';
       case 429: return 'Rate limit reached. Wait a moment before trying again.';
       case 500: return 'Server error (500). Please try again shortly.';
@@ -574,11 +571,12 @@
     opts = opts || {};
     var method = opts.method || 'GET';
     var body = (opts.body === undefined) ? null : opts.body;
-    var useAuth = opts.auth !== false;
+    var handleAuthFailure = opts.handleAuthFailure !== false;
 
+    // Browser authentication is handled by the SameSite, HttpOnly session
+    // cookie. The API key is never written to localStorage or attached by JS.
     var headers = { 'Accept': 'application/json' };
     if (body !== null) headers['Content-Type'] = 'application/json';
-    if (useAuth && state.apiKey) headers['Authorization'] = 'Bearer ' + state.apiKey;
 
     var ctrl = ('AbortController' in window) ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, REQUEST_TIMEOUT_MS) : null;
@@ -611,9 +609,10 @@
     }
 
     if (!res.ok) {
-      if (res.status === 401 && useAuth && state.apiKey) handleUnauthorized();
+      if (res.status === 401 && handleAuthFailure && state.authenticated) handleUnauthorized();
       throw new ApiError(friendlyStatus(res.status, data), res.status, detailOf(data));
     }
+    if (res.status === 204) return {};
     if (data === null) throw new ApiError('The server returned an empty response.', res.status, null);
     return data;
   }
@@ -621,7 +620,7 @@
   /* =========================================================
      State + session
      ========================================================= */
-  var state = { apiKey: null, tier: null };
+  var state = { authenticated: false, apiKey: null, tier: null };
 
   function showDashboard(on) {
     $('dashboard').classList.toggle('hidden', !on);
@@ -629,24 +628,23 @@
   }
 
   function signOut(message, kind) {
+    state.authenticated = false;
     state.apiKey = null;
     state.tier = null;
-    storeDel(STORAGE_KEY);
+    $('api-key').textContent = '—';
+    $('btn-copy-key').disabled = true;
     showDashboard(false);
     selectTab('login');
     setMsg($('auth-msg'), kind || 'info', message || 'Signed out.');
   }
 
   function handleUnauthorized() {
-    if (!state.apiKey) return;
-    state.apiKey = null;
-    storeDel(STORAGE_KEY);
-    showDashboard(false);
-    selectTab('login');
-    setMsg($('auth-msg'), 'error', 'Your session is no longer valid (the API key was rejected). Please log in again.');
+    if (!state.authenticated) return;
+    signOut('Your secure session expired or was revoked. Please log in again.', 'error');
   }
 
   function enterDashboard() {
+    state.authenticated = true;
     setMsg($('auth-msg'), '', '');
     showDashboard(true);
     loadProfile();
@@ -661,96 +659,35 @@
   }
 
   /* =========================================================
-     Device fingerprint — canvas + screen + user agent
+     Privacy-preserving browser installation ID
      ========================================================= */
-  function fnv1a(str, seed) {
-    var h = (seed === undefined ? 0x811c9dc5 : seed) >>> 0;
-    for (var i = 0; i < str.length; i++) {
-      h ^= str.charCodeAt(i);
-      // h *= 16777619, kept in 32-bit range
-      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  function randomInstallationId() {
+    var bytes = new Uint8Array(16);
+    if (window.crypto && crypto.getRandomValues) {
+      crypto.getRandomValues(bytes);
+    } else {
+      // Old-browser fallback only; this value is an identifier, not a secret.
+      for (var i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
     }
-    return h >>> 0;
-  }
-  function toHex32(n) { return ('00000000' + (n >>> 0).toString(16)).slice(-8); }
-
-  function canvasSignal() {
-    try {
-      var c = document.createElement('canvas');
-      c.width = 220; c.height = 32;
-      var ctx = c.getContext ? c.getContext('2d') : null;
-      if (!ctx || typeof c.toDataURL !== 'function') return '';
-      ctx.textBaseline = 'top';
-      var g = ctx.createLinearGradient(0, 0, 220, 0);
-      g.addColorStop(0, '#f60'); g.addColorStop(0.5, '#069'); g.addColorStop(1, '#0f6');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, 220, 32);
-      ctx.fillStyle = 'rgba(255,255,255,0.72)';
-      ctx.font = '15px "Arial", sans-serif';
-      ctx.fillText('XboxChecker\u00A9\u{1F512}', 3, 9);
-      ctx.strokeStyle = 'rgba(120,186,176,0.9)';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(64, 16, 24, 0, Math.PI * 2, true); ctx.stroke();
-      ctx.globalCompositeOperation = 'multiply';
-      ctx.fillStyle = 'rgb(255,0,255)';
-      ctx.fillRect(90, 4, 40, 24);
-      return c.toDataURL();
-    } catch (e) {
-      return '';
-    }
-  }
-
-  function userAgentString() {
-    try {
-      if (navigator.userAgentData && navigator.userAgentData.brands && navigator.userAgentData.brands.length) {
-        return navigator.userAgentData.brands.map(function (b) { return b.brand + '/' + b.version; }).join(';')
-             + '|' + (navigator.userAgentData.platform || '');
-      }
-    } catch (e) {}
-    return navigator.userAgent || 'unknown-agent';
+    return Array.prototype.map.call(bytes, function (b) {
+      return ('0' + b.toString(16)).slice(-2);
+    }).join('');
   }
 
   function computeFingerprint() {
-    var parts = [];
-    try {
-      parts.push(canvasSignal());
-      parts.push(userAgentString());
-      parts.push((screen && screen.width) || 0, (screen && screen.height) || 0, (screen && screen.colorDepth) || 0);
-      parts.push(window.devicePixelRatio || 1);
-      parts.push((navigator && navigator.language) || '');
-      parts.push((navigator && navigator.languages) ? navigator.languages.join(',') : '');
-      parts.push((navigator && navigator.platform) || '');
-      parts.push((navigator && navigator.hardwareConcurrency) || 0);
-      parts.push((navigator && navigator.maxTouchPoints) || 0);
-      try { parts.push(Intl.DateTimeFormat().resolvedOptions().timeZone || ''); } catch (e) {}
-    } catch (e) { /* every signal is optional */ }
-
-    var joined = parts.join('~');
-    var fp = toHex32(fnv1a(joined, 0x811c9dc5)) + toHex32(fnv1a(joined, 0x01000193));
-
-    // Guarantee a stable, non-empty value even if every signal above failed.
-    if (!fp || fp === '0000000000000000') {
-      fp = storeGet('xbsp_fp_fallback');
-      if (!fp) {
-        var rnd = '';
-        if (window.crypto && crypto.getRandomValues) {
-          var a = new Uint32Array(2); crypto.getRandomValues(a);
-          rnd = toHex32(a[0]) + toHex32(a[1]);
-        } else {
-          rnd = toHex32(Math.floor(Math.random() * 4294967295)) + toHex32(Math.floor(Math.random() * 4294967295));
-        }
-        fp = rnd;
-        storeSet('xbsp_fp_fallback', fp);
-      }
+    var id = storeGet('xbsp_install_id');
+    if (!/^[a-f0-9]{32}$/.test(id || '')) {
+      id = randomInstallationId();
+      storeSet('xbsp_install_id', id);
     }
-    return fp;
+    return id;
   }
 
   function refreshFingerprint() {
-    var fp = computeFingerprint();
+    var id = computeFingerprint();
     var input = $('reg-fp');
-    if (input) input.value = fp;
-    return fp;
+    if (input) input.value = id;
+    return id;
   }
 
   /* =========================================================
@@ -778,93 +715,31 @@
   }
 
   /* =========================================================
-     Canonical JSON + HMAC signature verification
+     Response signature presentation
      ========================================================= */
 
-  // Deterministic serialisation: object keys sorted recursively, compact separators.
-  function canonicalJson(value) {
-    if (value === undefined) return 'null';
-    if (value === null) return 'null';
-    var t = typeof value;
-    if (t === 'number' || t === 'boolean') return JSON.stringify(value);
-    if (t === 'string') return JSON.stringify(value);
-    if (t === 'bigint') return JSON.stringify(String(value));
-    if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
-    if (t === 'object') {
-      return '{' + Object.keys(value).sort().map(function (k) {
-        return JSON.stringify(k) + ':' + canonicalJson(value[k]);
-      }).join(',') + '}';
-    }
-    return 'null';
-  }
-
-  function parseSignature(sig) {
-    var s = String(sig || '').trim();
-    if (!s) return null;
-    if (/^[0-9a-fA-F]+$/.test(s) && s.length % 2 === 0) {
-      var out = new Uint8Array(s.length / 2);
-      for (var i = 0; i < out.length; i++) out[i] = parseInt(s.substr(i * 2, 2), 16);
-      return out;
-    }
-    try {
-      var bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
-      var b = new Uint8Array(bin.length);
-      for (var j = 0; j < bin.length; j++) b[j] = bin.charCodeAt(j);
-      return b;
-    } catch (e) { return null; }
-  }
-
-  async function verifySignature(response) {
+  // HMAC uses a shared secret and therefore cannot be independently verified
+  // by public browser code without publishing the signing secret. Verification
+  // belongs in a trusted API client/backend (see api.watermark.verify_signature).
+  // The UI validates the wire format and reports the signature honestly.
+  function inspectSignature(response) {
     var signature = response && response.signature;
     if (!signature || typeof signature !== 'string') {
       return { state: 'na', label: 'No signature returned', detail: 'The response did not include a signature field.' };
     }
-    if (!(window.crypto && window.crypto.subtle && window.isSecureContext)) {
-      return {
-        state: 'na',
-        label: 'Cannot verify here',
-        detail: 'Web Crypto (crypto.subtle) needs a secure context — open this page over HTTPS or http://localhost.'
-      };
+    if (!/^[0-9a-f]{64}$/i.test(signature)) {
+      return { state: 'invalid', label: 'Malformed signature', detail: 'Expected a 64-character HMAC-SHA256 hex value.' };
     }
-
-    var rest = {};
-    Object.keys(response).forEach(function (k) { if (k !== 'signature') rest[k] = response[k]; });
-    var watermark = (typeof rest.watermark === 'string' && rest.watermark) ? rest.watermark : EXPECTED_WATERMARK;
-
-    var sigBytes = parseSignature(signature);
-    if (!sigBytes) {
-      return { state: 'na', label: 'Unreadable signature', detail: 'The signature was not valid hex or base64.' };
-    }
-
-    var candidates = [
-      { label: 'sorted-keys JSON of payload + watermark', text: canonicalJson(Object.assign({}, rest, { watermark: watermark })) },
-      { label: 'sorted-keys JSON of payload only',        text: canonicalJson(rest) },
-      { label: 'insertion-order JSON of payload + watermark', text: JSON.stringify(Object.assign({}, rest, { watermark: watermark })) }
-    ];
-
-    try {
-      var enc = new TextEncoder();
-      var key = await crypto.subtle.importKey(
-        'raw', enc.encode(HMAC_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
-      );
-      for (var i = 0; i < candidates.length; i++) {
-        var ok = await crypto.subtle.verify('HMAC', key, sigBytes, enc.encode(candidates[i].text));
-        if (ok) return { state: 'valid', label: 'Signature valid', detail: 'Matched canonical form: ' + candidates[i].label };
-      }
-    } catch (e) {
-      return { state: 'na', label: 'Verification failed', detail: (e && e.message) ? e.message : 'Web Crypto error.' };
-    }
-
     return {
-      state: 'invalid',
-      label: 'Signature mismatch',
-      detail: 'The HMAC did not match any expected canonical form — the payload may have been altered, or the shared secret differs.'
+      state: 'signed',
+      label: 'Server signature present',
+      detail: 'Verify this HMAC in a trusted backend with WATERMARK_SECRET; the secret is intentionally not shipped to the browser.'
     };
   }
 
   function sigPill(v) {
-    var cls = v.state === 'valid' ? 'ok' : (v.state === 'invalid' ? 'bad' : 'na');
-    var icon = v.state === 'valid' ? '✅' : (v.state === 'invalid' ? '❌' : '⚪');
+    var cls = v.state === 'signed' ? 'ok' : (v.state === 'invalid' ? 'bad' : 'na');
+    var icon = v.state === 'signed' ? '🛡️' : (v.state === 'invalid' ? '❌' : '⚪');
     var pill = el('span', { class: 'pill ' + cls }, [icon + ' ' + v.label]);
     var wrap = el('span', {}, [pill]);
     if (v.detail) {
@@ -887,23 +762,22 @@
 
     if (!validEmail(email)) { setMsg(msg, 'error', 'Please enter a valid email address.'); $('reg-email').focus(); return; }
     if (!password || password.length < 8) { setMsg(msg, 'error', 'Password must be at least 8 characters.'); $('reg-pass').focus(); return; }
-    if (!fp) { setMsg(msg, 'error', 'Could not generate a device fingerprint. Please reload the page.'); return; }
+    if (!fp) { setMsg(msg, 'error', 'Could not generate an installation ID. Please reload the page.'); return; }
 
     setBusy(btn, true, 'Creating account…');
     setMsg(msg, '', '');
     try {
       var data = await api('/auth/register', {
         method: 'POST',
-        auth: false,
+        handleAuthFailure: false,
         body: { email: email, password: password, device_fingerprint: fp }
       });
-      var key = data.api_key || data.access_token || data.key;
-      if (!key) throw new ApiError('Registration succeeded but no API key was returned.', 200, null);
-      if (!storeSet(STORAGE_KEY, key)) {
-        setMsg(msg, 'warn', 'Account created, but this browser blocked local storage — you will need to log in again on your next visit.');
-      }
-      state.apiKey = key;
-      setMsg(msg, 'success', 'Account created. Welcome!');
+      // The backend has created an HttpOnly session. Keep the one-time API key
+      // only in memory so a script running later cannot steal it from storage.
+      state.apiKey = data.api_key || data.key || null;
+      state.authenticated = true;
+      $('reg-pass').value = '';
+      setMsg(msg, 'success', 'Account created. Your secure session is active.');
       enterDashboard();
     } catch (err) {
       setMsg(msg, 'error', err.message || 'Registration failed.');
@@ -925,15 +799,16 @@
     setBusy(btn, true, 'Signing in…');
     setMsg(msg, '', '');
     try {
-      var data = await api('/auth/login', { method: 'POST', auth: false, body: { email: email, password: password } });
-      // The dashboard is keyed on the API key; accept either field name defensively.
-      var key = data.api_key || data.access_token || data.key;
-      if (!key) throw new ApiError('Login succeeded but no API key was returned.', 200, null);
-      storeSet(STORAGE_KEY, key);
-      state.apiKey = key;
+      var data = await api('/auth/login', {
+        method: 'POST',
+        handleAuthFailure: false,
+        body: { email: email, password: password }
+      });
+      state.authenticated = true;
+      state.apiKey = data.api_key || data.key || null;
       if (data.tier) state.tier = data.tier;
       $('login-pass').value = '';
-      setMsg(msg, 'success', 'Welcome back!');
+      setMsg(msg, 'success', 'Welcome back. Your secure session is active.');
       enterDashboard();
     } catch (err) {
       setMsg(msg, 'error', err.message || 'Login failed.');
@@ -947,32 +822,36 @@
      ========================================================= */
   async function loadProfile(opts) {
     opts = opts || {};
-    if (!state.apiKey) return;
-    $('api-key').textContent = state.apiKey;
+    if (!state.authenticated && !opts.probe) return false;
 
     if (!opts.silent) setMsg($('dash-msg'), 'info', 'Loading profile…');
     try {
-      var data = await api('/user/me');
+      var data = await api('/user/me', { handleAuthFailure: !opts.probe });
+      state.authenticated = true;
+      var shownKey = state.apiKey || data.api_key_preview || 'Available after regeneration';
+      $('api-key').textContent = shownKey;
+      $('btn-copy-key').disabled = !state.apiKey;
       var tier = String(data.tier || 'unknown').toLowerCase();
       state.tier = tier;
       var badge = $('tier-badge');
       badge.textContent = tier.toUpperCase();
       badge.className = 'badge ' + (['free', 'premium', 'pro'].indexOf(tier) >= 0 ? tier : 'unknown');
 
-      var used = Number(data.daily_usage != null ? data.daily_usage : 0);
-      var limit = Number(data.daily_limit != null ? data.daily_limit : 0);
-      if (!isFinite(used)) used = 0;
-      $('usage').textContent = limit > 0
-        ? used + ' / ' + limit + ' checks today'
-        : used + ' checks today (no limit reported)';
-      var pct = limit > 0 ? Math.max(0, Math.min(100, (used / limit) * 100)) : 0;
-      $('usage-bar').style.width = pct + '%';
+      $('profile-email').textContent = data.email || '—';
+      await loadMicrosoftStatus({ silent: true });
 
       if (opts.message) setMsg($('dash-msg'), 'success', opts.message);
       else setMsg($('dash-msg'), '', '');
+      return true;
     } catch (err) {
-      if (err.status === 401) return;   // handleUnauthorized() already reset the UI
-      setMsg($('dash-msg'), 'error', 'Could not load your profile: ' + (err.message || 'unknown error'));
+      if (err.status === 401) {
+        if (!opts.probe) handleUnauthorized();
+        return false;
+      }
+      if (!opts.probe) {
+        setMsg($('dash-msg'), 'error', 'Could not load your profile: ' + (err.message || 'unknown error'));
+      }
+      return false;
     }
   }
 
@@ -984,12 +863,11 @@
       var key = data.api_key || data.key;
       if (!key) throw new ApiError('The server did not return a new API key.', 200, null);
 
-      // Drop the old key from storage and memory before adopting the new one.
-      storeDel(STORAGE_KEY);
+      // Keep the full key in memory for this page only. Authentication of the
+      // dashboard itself continues through the server-side session.
       state.apiKey = key;
-      storeSet(STORAGE_KEY, key);
-
       $('api-key').textContent = key;
+      $('btn-copy-key').disabled = false;
       $('revoke-confirm').classList.add('hidden');
       setMsg($('dash-msg'), 'success', 'API key regenerated. The previous key is no longer valid.');
       toast('New API key generated', 'success');
@@ -1004,177 +882,126 @@
   }
 
   /* =========================================================
-     Check
+     Consent-based Microsoft / Xbox connection
      ========================================================= */
-  function parseProxies(raw) {
-    var seen = {};
-    return String(raw || '')
-      .split(/\r?\n/)
-      .map(function (p) { return p.trim(); })
-      .filter(function (p) {
-        if (!p || p.charAt(0) === '#') return false;
-        if (seen[p]) return false;
-        seen[p] = true;
-        return true;
-      });
+  function addDetail(dl, label, value, strong) {
+    if (value === null || value === undefined || value === '') return;
+    dl.appendChild(el('dt', { text: label }));
+    dl.appendChild(el('dd', {}, [strong
+      ? el('strong', { text: String(value) })
+      : document.createTextNode(String(value))]));
   }
 
-  function updateProxyCount() {
-    var n = parseProxies($('check-proxies').value).length;
-    $('proxy-count').textContent = n === 0 ? 'No proxies — direct connection' : n + (n === 1 ? ' proxy' : ' proxies') + ' queued';
-  }
-
-  /* Map checker statuses to badge styles. Handles the live API
-     (PREMIUM/FREE/BAD/2FA/BANNED/TIMEOUT/ERROR) and legacy hit/bad. */
-  function statusBadgeClass(s) {
-    var t = String(s == null ? '' : s).toLowerCase();
-    if (t === 'hit' || t === 'premium') return 'premium';
-    if (t === 'free' || t === 'miss') return 'free';
-    if (t === '2fa' || t === 'pro') return 'pro';
-    return 'unknown';
-  }
-
-  function statusHint(s) {
-    var t = String(s == null ? '' : s).toUpperCase();
-    var hints = {
-      'PREMIUM': 'Active Game Pass / subscription found.',
-      'HIT': 'Active Game Pass / subscription found.',
-      'FREE': 'Valid account, no active subscription found.',
-      'BAD': 'Invalid credentials or account does not exist.',
-      '2FA': 'Valid credentials, but two-factor approval is required.',
-      'BANNED': 'Account is banned or suspended.',
-      'TIMEOUT': 'The check timed out — try again or add proxies.',
-      'ERROR': 'The check could not complete.'
-    };
-    return hints[t] || '';
-  }
-
-  async function runCheck(ev) {
-    ev.preventDefault();
-    var btn = $('btn-check');
-    var host = $('result');
-    var email = $('check-email').value.trim();
-    var password = $('check-pass').value;
-    var proxies = parseProxies($('check-proxies').value);
-
-    clear(host);
-    if (!email) { setMsg($('dash-msg'), 'error', 'Enter the account email to check.'); $('check-email').focus(); return; }
-    if (!password) { setMsg($('dash-msg'), 'error', 'Enter the account password to check.'); $('check-pass').focus(); return; }
-    setMsg($('dash-msg'), '', '');
-
-    setBusy(btn, true, 'Checking…');
-    host.appendChild(el('div', { class: 'status info', text: 'Running check…' }));
-
-    var data;
+  function formatTimestamp(value) {
     try {
-      data = await api('/check', { method: 'POST', body: { email: email, password: password, proxies: proxies } });
-    } catch (err) {
-      clear(host);
-      host.appendChild(el('div', { class: 'status error' }, [
-        el('strong', { text: 'Check failed. ' }),
-        document.createTextNode(err.message || 'Unknown error.')
-      ]));
-      return;
-    } finally {
-      setBusy(btn, false);
+      var date = new Date(value);
+      if (!isNaN(date.getTime())) {
+        return new Intl.DateTimeFormat(undefined, {
+          dateStyle: 'medium', timeStyle: 'short'
+        }).format(date);
+      }
+    } catch (e) {}
+    return String(value || '');
+  }
+
+  function setConnectAvailable(available, connected) {
+    var link = $('btn-ms-connect');
+    if (available) {
+      link.setAttribute('href', '/microsoft/connect');
+      link.removeAttribute('aria-disabled');
+      link.classList.remove('disabled');
+      link.textContent = connected ? 'Refresh from Microsoft' : 'Continue with Microsoft';
+    } else {
+      link.removeAttribute('href');
+      link.setAttribute('aria-disabled', 'true');
+      link.classList.add('disabled');
+      link.textContent = 'Microsoft OAuth not configured';
+    }
+  }
+
+  async function loadMicrosoftStatus(opts) {
+    opts = opts || {};
+    if (!state.authenticated) return false;
+    var statusHost = $('xbox-status');
+    var resultHost = $('xbox-result');
+    if (!opts.silent) {
+      clear(statusHost);
+      statusHost.appendChild(el('div', { class: 'k', text: 'Connection status' }));
+      statusHost.appendChild(el('div', { class: 'v', text: 'Loading…' }));
     }
 
     try {
-      clear(host);
+      var data = await api('/microsoft/status');
+      var caps = (data.capabilities && typeof data.capabilities === 'object') ? data.capabilities : {};
+      var connected = data.connected === true && data.profile && typeof data.profile === 'object';
+      setConnectAvailable(caps.oauth_configured === true, connected);
+      $('btn-ms-disconnect').classList.toggle('hidden', !connected);
 
-      var payload = {};
-      Object.keys(data).forEach(function (k) { if (k !== 'signature' && k !== 'watermark') payload[k] = data[k]; });
-
-      var statusValue = data.status;
-      var statusText = (statusValue === null || statusValue === undefined)
-        ? 'unknown'
-        : (typeof statusValue === 'object' ? JSON.stringify(statusValue) : String(statusValue));
-
-      var watermarkText = (typeof data.watermark === 'string' && data.watermark) ? data.watermark : '(none returned)';
-      var watermarkMatches = watermarkText.trim() === EXPECTED_WATERMARK;
-
-      var dl = el('dl', { class: 'kv' });
-      dl.appendChild(el('dt', { text: 'Status' }));
-      var statusCell = [el('span', { class: 'badge ' + statusBadgeClass(statusText), text: statusText })];
-      var hint = statusHint(statusText);
-      if (hint) {
-        statusCell.push(document.createTextNode(' '));
-        statusCell.push(el('span', { class: 'hint', text: hint }));
-      }
-      dl.appendChild(el('dd', {}, statusCell));
-
-      // Parsed account details (gamertag, gamerscore, Game Pass plan).
-      var details = (data.data && typeof data.data === 'object') ? data.data : null;
-      if (!details && data.gamertag) details = { gamertag: data.gamertag };  // legacy shape
-      if (details) {
-        if (details.gamertag) {
-          dl.appendChild(el('dt', { text: 'Gamertag' }));
-          dl.appendChild(el('dd', {}, [el('strong', { text: String(details.gamertag) })]));
-        }
-        if (details.gamerscore !== null && details.gamerscore !== undefined && details.gamerscore !== '') {
-          dl.appendChild(el('dt', { text: 'Gamerscore' }));
-          dl.appendChild(el('dd', { text: String(details.gamerscore) }));
-        }
-        if (details.gamepass) {
-          dl.appendChild(el('dt', { text: 'Game Pass' }));
-          dl.appendChild(el('dd', {}, [el('span', { class: 'badge premium', text: String(details.gamepass) })]));
-        }
-        if (Array.isArray(details.subscriptions) && details.subscriptions.length) {
-          dl.appendChild(el('dt', { text: 'Subscriptions' }));
-          dl.appendChild(el('dd', { text: details.subscriptions.join(', ') }));
-        }
-      }
-      if (typeof data.duration === 'number' && isFinite(data.duration)) {
-        dl.appendChild(el('dt', { text: 'Duration' }));
-        dl.appendChild(el('dd', { text: data.duration.toFixed(2) + 's' }));
-      }
-      if (data.rate_limit_remaining !== null && data.rate_limit_remaining !== undefined) {
-        dl.appendChild(el('dt', { text: 'Remaining today' }));
-        dl.appendChild(el('dd', { text: String(data.rate_limit_remaining) }));
-      }
-      if (data.error) {
-        dl.appendChild(el('dt', { text: 'Error' }));
-        dl.appendChild(el('dd', {}, [el('code', { text: String(data.error) })]));
-      }
-
-      dl.appendChild(el('dt', { text: 'Watermark' }));
-      dl.appendChild(el('dd', {}, [
-        el('span', { class: 'watermark', text: watermarkText }),
-        document.createTextNode(' '),
+      clear(statusHost);
+      statusHost.appendChild(el('div', { class: 'k', text: 'Connection status' }));
+      statusHost.appendChild(el('div', { class: 'v' }, [
         el('span', {
-          class: 'pill ' + (watermarkMatches ? 'ok' : 'bad'),
-          text: (watermarkMatches ? '✅ matches expected' : '❌ expected “' + EXPECTED_WATERMARK + '”')
+          class: 'pill ' + (connected ? 'ok' : 'na'),
+          text: connected ? '✅ Xbox profile connected' : '⚪ Not connected'
         })
       ]));
 
-      dl.appendChild(el('dt', { text: 'Signature' }));
-      dl.appendChild(el('dd', {}, [el('code', { text: String(data.signature || '(none)') })]));
+      clear(resultHost);
+      if (connected) {
+        var profile = data.profile;
+        var dl = el('dl', { class: 'kv' });
+        addDetail(dl, 'Gamertag', profile.gamertag, true);
+        addDetail(dl, 'Gamerscore', profile.gamerscore, false);
+        addDetail(dl, 'Account tier', profile.account_tier, false);
+        addDetail(dl, 'Last refreshed', formatTimestamp(profile.last_checked_at), false);
+        resultHost.appendChild(dl);
+      } else if (!caps.oauth_configured) {
+        resultHost.appendChild(el('div', {
+          class: 'status warn',
+          text: 'The operator must set MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, and MICROSOFT_REDIRECT_URI before Xbox connection can be used.'
+        }));
+      } else {
+        resultHost.appendChild(el('div', {
+          class: 'status info',
+          text: 'Connect through Microsoft to load your real Xbox profile. No demo profile will be substituted.'
+        }));
+      }
 
-      dl.appendChild(el('dt', { text: 'Client-side HMAC' }));
-      var sigCell = el('dd');
-      host.appendChild(dl);
+      var signatureInfo = inspectSignature(data);
+      var signatureRow = el('p', { class: 'hint' }, [sigPill(signatureInfo)]);
+      resultHost.appendChild(signatureRow);
+      return true;
+    } catch (err) {
+      clear(statusHost);
+      statusHost.appendChild(el('div', { class: 'k', text: 'Connection status' }));
+      statusHost.appendChild(el('div', { class: 'v', text: 'Unavailable' }));
+      clear(resultHost);
+      resultHost.appendChild(el('div', {
+        class: 'status error',
+        text: 'Could not load the Xbox connection: ' + (err.message || 'unknown error')
+      }));
+      return false;
+    }
+  }
 
-      var ver = await verifySignature(data);
-      sigCell.appendChild(sigPill(ver));
-      dl.appendChild(sigCell);
-
-      host.appendChild(el('h3', { text: 'Raw payload', style: 'margin-top:1rem' }));
-      host.appendChild(el('pre', { text: JSON.stringify(payload, null, 2) }));
-
-      loadProfile({ silent: true });
-    } catch (renderErr) {
-      clear(host);
-      host.appendChild(el('div', { class: 'status error' }, [
-        el('strong', { text: 'The check completed, but the result could not be displayed. ' }),
-        el('code', { text: JSON.stringify(data) })
-      ]));
+  async function disconnectMicrosoft() {
+    var btn = $('btn-ms-disconnect');
+    setBusy(btn, true, 'Disconnecting…');
+    try {
+      await api('/microsoft/disconnect', { method: 'POST' });
+      toast('Xbox profile disconnected', 'success');
+      await loadMicrosoftStatus();
+    } catch (err) {
+      setMsg($('dash-msg'), 'error', err.message || 'Could not disconnect the Xbox profile.');
+    } finally {
+      setBusy(btn, false);
     }
   }
 
   /* =========================================================
      Admin panel
      ========================================================= */
-  var ADMIN_COLUMNS = ['email', 'tier', 'daily_usage', 'daily_limit', 'total_checks', 'created_at', 'last_check_at', 'api_key', 'device_fingerprint'];
+  var ADMIN_COLUMNS = ['email', 'tier', 'is_active', 'daily_usage', 'daily_limit', 'audit_events', 'created_at', 'last_event_at', 'api_key_preview'];
   var SENSITIVE = { api_key: true, device_fingerprint: true, password: true, password_hash: true };
 
   function mask(v) {
@@ -1196,6 +1023,7 @@
     var msg = $('admin-msg');
     var out = $('admin-output');
     var adminKey = $('admin-key').value.trim();
+    $('admin-key').value = '';
 
     clear(out);
     if (!adminKey) { setMsg(msg, 'error', 'Enter the admin API key first.'); $('admin-key').focus(); return; }
@@ -1212,7 +1040,6 @@
         signal: ctrl ? ctrl.signal : undefined,
         credentials: 'same-origin'
       });
-      if (timer) clearTimeout(timer);
     } catch (err) {
       var timedOut = err && err.name === 'AbortError';
       setMsg(msg, 'error', timedOut
@@ -1220,6 +1047,7 @@
         : 'Network error — could not reach /admin/users.');
       return;
     } finally {
+      if (timer) clearTimeout(timer);
       setBusy(btn, false);
     }
 
@@ -1303,22 +1131,31 @@
 
     $('register-form').addEventListener('submit', register);
     $('login-form').addEventListener('submit', login);
-    $('check-form').addEventListener('submit', runCheck);
     $('admin-form').addEventListener('submit', loadAdmin);
-
-    $('fp-refresh').addEventListener('click', function () {
-      refreshFingerprint();
-      toast('Fingerprint regenerated', 'success');
-    });
+    $('btn-ms-disconnect').addEventListener('click', disconnectMicrosoft);
 
     $('btn-copy-key').addEventListener('click', async function () {
-      var ok = await copyText(state.apiKey || $('api-key').textContent);
+      if (!state.apiKey) {
+        toast('Regenerate the API key to reveal a new full value.', 'error');
+        return;
+      }
+      var ok = await copyText(state.apiKey);
       toast(ok ? 'API key copied to clipboard' : 'Copy failed — select the key manually', ok ? 'success' : 'error');
     });
 
-    $('btn-logout').addEventListener('click', function () {
-      signOut('You have been signed out on this device.');
-      toast('Signed out');
+    $('btn-logout').addEventListener('click', async function () {
+      var btn = $('btn-logout');
+      setBusy(btn, true, 'Signing out…');
+      try {
+        await api('/auth/logout', { method: 'POST', handleAuthFailure: false });
+      } catch (e) {
+        // Clear the local UI even if the network is down; the HttpOnly cookie
+        // remains short-lived and can be revoked from another successful login.
+      } finally {
+        setBusy(btn, false);
+        signOut('You have been signed out on this device.');
+        toast('Signed out');
+      }
     });
 
     $('btn-refresh').addEventListener('click', function () { loadProfile(); });
@@ -1331,16 +1168,6 @@
       $('revoke-confirm').classList.add('hidden');
     });
     $('btn-revoke-yes').addEventListener('click', doRevoke);
-
-    $('check-proxies').addEventListener('input', updateProxyCount);
-
-    $('btn-eye').addEventListener('click', function () {
-      var input = $('check-pass');
-      var show = input.type === 'password';
-      input.type = show ? 'text' : 'password';
-      $('btn-eye').textContent = show ? '🙈' : '👁';
-      $('btn-eye').setAttribute('aria-label', show ? 'Hide password' : 'Show password');
-    });
 
     $('admin-trigger').addEventListener('click', openAdmin);
     $('btn-admin-close').addEventListener('click', function () {
@@ -1370,20 +1197,30 @@
     });
   }
 
-  function init() {
+  async function init() {
     try {
+      // Remove credentials and hardware-derived material left by earlier
+      // releases. Current sessions live in an HttpOnly cookie, while the new
+      // installation ID is random and carries no browser/hardware signals.
+      storeRemove('xbsp_api_key');
+      storeRemove('xbsp_fp_fallback');
       refreshFingerprint();
       wire();
-      updateProxyCount();
       selectTab('register');
+      showDashboard(false);
 
-      var saved = storeGet(STORAGE_KEY);
-      if (saved) {
-        state.apiKey = saved;
+      // Ask the backend whether its HttpOnly cookie is still valid. No token or
+      // API key is read from JavaScript storage.
+      var restored = await loadProfile({ probe: true, silent: true });
+      if (restored) {
         showDashboard(true);
-        loadProfile();           // a rejected key triggers handleUnauthorized() -> back to login
-      } else {
-        showDashboard(false);
+        var outcome = new URLSearchParams(window.location.search).get('microsoft');
+        if (outcome === 'connected') setMsg($('dash-msg'), 'success', 'Your Xbox profile was connected successfully.');
+        else if (outcome === 'cancelled') setMsg($('dash-msg'), 'info', 'Microsoft sign-in was cancelled.');
+        else if (outcome) setMsg($('dash-msg'), 'error', 'The Microsoft connection could not be completed. Please try again.');
+        if (outcome && window.history && window.history.replaceState) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
       }
     } catch (e) {
       // Never leave a blank screen: surface the failure instead.

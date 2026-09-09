@@ -1,502 +1,336 @@
 /**
- * Frontend QA harness — loads the REAL static/index.html in jsdom, stubs fetch,
- * and drives the real event handlers. No logic is re-implemented here.
+ * Frontend DOM/integration QA for the real static/index.html.
  *
- * Run:
- *   npm install --no-save --prefix /tmp/jstest jsdom
- *   node qa-frontend.test.js
+ * Run: npm install --no-save --prefix /tmp/jstest jsdom
+ *      node qa-frontend.test.js
  */
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { JSDOM, VirtualConsole } = require('/tmp/jstest/node_modules/jsdom');
+const { JSDOM, VirtualConsole } = require('jsdom');
 
-const HTML_PATH = path.resolve(__dirname, 'static/index.html');
-const HTML = fs.readFileSync(HTML_PATH, 'utf8');
-const SECRET = 'dev-secret-change-in-prod';
-
-let pass = 0, fail = 0, envGapsTotal = 0;
+const HTML = fs.readFileSync(path.resolve(__dirname, 'static/index.html'), 'utf8');
+const GOOD_SIG = 'a'.repeat(64);
+let pass = 0, fail = 0;
 const failures = [];
 
-function ok(name, cond, extra) {
-  if (cond) { pass++; console.log('  \x1b[32mPASS\x1b[0m ' + name); }
-  else { fail++; failures.push(name); console.log('  \x1b[31mFAIL\x1b[0m ' + name + (extra ? '\n        -> ' + extra : '')); }
+function ok(name, condition, detail = '') {
+  if (condition) { pass++; console.log('  \x1b[32mPASS\x1b[0m ' + name); }
+  else {
+    fail++; failures.push(name);
+    console.log('  \x1b[31mFAIL\x1b[0m ' + name + (detail ? '\n        -> ' + detail : ''));
+  }
 }
-function section(t) { console.log('\n\x1b[1m' + t + '\x1b[0m'); }
+function section(title) { console.log('\n\x1b[1m' + title + '\x1b[0m'); }
 
-/* ---- canonicalisation matching the page's implementation (independent copy for signing) ---- */
-function canonicalJson(v) {
-  if (v === undefined || v === null) return 'null';
-  if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'string') return JSON.stringify(v);
-  if (Array.isArray(v)) return '[' + v.map(canonicalJson).join(',') + ']';
-  return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonicalJson(v[k])).join(',') + '}';
-}
-function sign(payload) {
-  const s = canonicalJson(payload);
-  return crypto.createHmac('sha256', SECRET).update(s, 'utf8').digest('hex');
+function response(status, body) {
+  const bodyText = status === 204 ? '' : (typeof body === 'string' ? body : JSON.stringify(body));
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    text: async () => bodyText
+  };
 }
 
-function makeDom(routes, opts) {
-  opts = opts || {};
-  const vc = new VirtualConsole();
-  const pageErrors = [];
-  const envGaps = [];
-  vc.on('jsdomError', e => {
-    if (/Not implemented/.test(e.message)) { envGaps.push(e.message); envGapsTotal++; }  // jsdom has no canvas etc.
-    else pageErrors.push(e.message);
-  });
-  vc.on('error', (...a) => pageErrors.push(a.join(' ')));
-
+function makeDom(routes = {}, opts = {}) {
   const calls = [];
+  const pageErrors = [];
+  let sessionActive = !!opts.initialSession;
+  const vc = new VirtualConsole();
+  vc.on('jsdomError', error => {
+    if (!/Not implemented/.test(error.message)) pageErrors.push(error.message);
+  });
+  vc.on('error', (...parts) => pageErrors.push(parts.join(' ')));
+
   const dom = new JSDOM(HTML, {
-    url: 'http://localhost:8000/static/index.html',
+    url: opts.url || 'http://localhost:8000/',
     runScripts: 'dangerously',
     pretendToBeVisual: true,
     virtualConsole: vc,
     beforeParse(window) {
-      // jsdom has no Web Crypto / canvas / scrollIntoView — provide the browser APIs
-      // the page legitimately expects so the real code paths execute.
       Object.defineProperty(window, 'crypto', { value: crypto.webcrypto, configurable: true });
       Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
       window.TextEncoder = TextEncoder;
-      window.TextDecoder = TextDecoder;
       window.AbortController = AbortController;
       window.Element.prototype.scrollIntoView = function () {};
-      if (opts.preset) Object.keys(opts.preset).forEach(k => window.localStorage.setItem(k, opts.preset[k]));
       window.confirm = () => true;
-      window.alert = () => {};
-      window.fetch = async function (url, init) {
-        init = init || {};
-        calls.push({ url: String(url), method: init.method || 'GET', headers: init.headers || {}, body: init.body || null });
-        const route = routes[String(url).replace(/^https?:\/\/[^/]+/, '')] || routes[String(url)];
-        if (!route) return { ok: false, status: 404, text: async () => JSON.stringify({ detail: 'Not Found' }) };
-        if (route.throwNetwork) { const e = new Error('fetch failed'); e.name = 'TypeError'; throw e; }
-        if (route.timeout) { const e = new Error('aborted'); e.name = 'AbortError'; throw e; }
-        const status = route.status || 200;
-        const bodyText = typeof route.body === 'string' ? route.body : JSON.stringify(route.body);
-        return { ok: status >= 200 && status < 300, status, text: async () => bodyText };
+      if (opts.preset) {
+        Object.entries(opts.preset).forEach(([key, value]) => window.localStorage.setItem(key, value));
+      }
+
+      window.fetch = async function (input, init = {}) {
+        const url = String(input);
+        const pathname = new URL(url, window.location.href).pathname;
+        const call = {
+          url,
+          pathname,
+          method: init.method || 'GET',
+          headers: init.headers || {},
+          body: init.body || null,
+          credentials: init.credentials
+        };
+        calls.push(call);
+
+        const protectedPath = pathname.startsWith('/user/') || pathname.startsWith('/microsoft/status') || pathname.startsWith('/microsoft/disconnect');
+        if (protectedPath && !sessionActive) return response(401, { detail: 'Authentication required or session expired' });
+
+        let route = routes[pathname];
+        if (typeof route === 'function') route = route(call);
+        if (!route) return response(404, { detail: 'Not Found' });
+        if (route.throwNetwork) throw new TypeError('fetch failed');
+        if (route.timeout) { const error = new Error('aborted'); error.name = 'AbortError'; throw error; }
+
+        const status = route.status === undefined ? 200 : route.status;
+        if ((pathname === '/auth/register' || pathname === '/auth/login') && status >= 200 && status < 300) {
+          sessionActive = true;
+        }
+        if (pathname === '/auth/logout' && status >= 200 && status < 300) sessionActive = false;
+        return response(status, route.body);
       };
     }
   });
-  return { dom, window: dom.window, document: dom.window.document, calls, pageErrors, envGaps };
+  return { dom, window: dom.window, document: dom.window.document, calls, pageErrors };
 }
 
-const tick = (w, n = 12) => new Promise(res => {
-  let i = 0;
-  (function step() { if (i++ >= n) return res(); setTimeout(step, 0); })();
+const tick = (n = 25) => new Promise(resolve => {
+  let count = 0;
+  (function next() { if (count++ >= n) return resolve(); setTimeout(next, 0); })();
 });
-const $ = (d, id) => d.getElementById(id);
-const txt = (d, id) => ($(d, id) ? $(d, id).textContent.trim() : null);
-const hidden = (d, id) => $(d, id).classList.contains('hidden');
-function click(d, id) {
-  const n = $(d, id);
-  n.dispatchEvent(new d.defaultView.MouseEvent('click', { bubbles: true, cancelable: true }));
+const $ = (document, id) => document.getElementById(id);
+const text = (document, id) => ($(document, id) ? $(document, id).textContent.trim() : '');
+const hidden = (document, id) => $(document, id).classList.contains('hidden');
+const click = (document, id) => $(document, id).dispatchEvent(new document.defaultView.MouseEvent('click', { bubbles: true, cancelable: true }));
+const submit = (document, id) => $(document, id).dispatchEvent(new document.defaultView.Event('submit', { bubbles: true, cancelable: true }));
+const set = (document, id, value) => { $(document, id).value = value; };
+
+function profile(tier = 'free') {
+  return {
+    email: 'student@example.com', tier,
+    daily_usage: 0, daily_limit: 100,
+    api_key_preview: 'xbsp_demo…1234', auth_method: 'session'
+  };
 }
-function submit(d, id) {
-  $(d, id).dispatchEvent(new d.defaultView.Event('submit', { bubbles: true, cancelable: true }));
+function disconnected(configured = true) {
+  return {
+    connected: false,
+    profile: null,
+    capabilities: {
+      oauth_configured: configured,
+      game_pass_entitlement_access: false,
+      game_pass_requirement: 'Partner authorization required'
+    },
+    watermark: 'Provided by @yorichiiprime',
+    signature: GOOD_SIG
+  };
 }
-function setVal(d, id, v) { $(d, id).value = v; }
 
 (async () => {
-  /* ===================================================================== */
-  section('1. Page load, fingerprint, no blank screen');
+  section('1. Boot, professional copy and auth tabs');
   {
-    const { document: d, pageErrors, window: w } = makeDom({});
-    await tick(w);
-    ok('page boots with zero uncaught errors', pageErrors.length === 0, JSON.stringify(pageErrors));
-    ok('auth section visible on load', !hidden(d, 'auth-section'));
-    ok('dashboard hidden on load', hidden(d, 'dashboard'));
-    ok('admin panel hidden on load (req 6)', hidden(d, 'admin-section'));
-    const fpv = d.getElementById('reg-fp').value;
-    ok('device fingerprint auto-generated (req 7)', /^[0-9a-f]{16}$/.test(fpv), 'got: ' + JSON.stringify(fpv));
-    ok('fingerprint is non-empty even with no canvas (jsdom has none)', fpv.length === 16);
-    ok('footer watermark text is exact (req 8)',
-      /Provided by @yorichiiprime/.test(d.querySelector('footer').textContent));
-    // fingerprint stability
-    click(d, 'fp-refresh');
-    ok('fingerprint regenerate button produces a stable 16-hex id', /^[0-9a-f]{16}$/.test(d.getElementById('reg-fp').value));
-  }
-
-  /* ===================================================================== */
-  section('2. Login form is reachable (regression: showLogin was missing)');
-  {
-    const { document: d, window: w } = makeDom({});
-    await tick(w);
-    ok('login form hidden initially', hidden(d, 'login-form'));
+    const { document: d, window: w, pageErrors, calls } = makeDom({}, { preset: { xbsp_api_key: 'LEGACY_SECRET' } });
+    await tick();
+    ok('page boots without uncaught errors', pageErrors.length === 0, JSON.stringify(pageErrors));
+    ok('auth visible and dashboard hidden', !hidden(d, 'auth-section') && hidden(d, 'dashboard'));
+    ok('legacy localStorage API key is removed', w.localStorage.getItem('xbsp_api_key') === null);
+    ok('backend session probe is attempted', calls.some(c => c.pathname === '/user/me'));
+    ok('Microsoft-password safety copy is visible', /never receives your Microsoft password/i.test(d.body.textContent));
+    ok('device identifier is generated', /^[0-9a-f]{32}$/.test($ (d, 'reg-fp').value), $(d, 'reg-fp').value);
     click(d, 'tab-login');
-    ok('clicking Login tab reveals the login form', !hidden(d, 'login-form'));
-    ok('clicking Login tab hides the register form', hidden(d, 'register-form'));
-    ok('login tab aria-selected=true', d.getElementById('tab-login').getAttribute('aria-selected') === 'true');
+    ok('login tab reveals login form', !hidden(d, 'login-form') && hidden(d, 'register-form'));
     click(d, 'tab-register');
-    ok('switching back to Register works', !hidden(d, 'register-form') && hidden(d, 'login-form'));
+    ok('register tab restores registration form', !hidden(d, 'register-form') && hidden(d, 'login-form'));
   }
 
-  /* ===================================================================== */
-  section('3. Registration flow (req 2)');
+  section('2. Registration uses backend cookie session, not localStorage');
   {
-    const { document: d, window: w, calls } = makeDom({
-      '/auth/register': { body: { api_key: 'xbp_REG_key_123', tier: 'free' } },
-      '/user/me': { body: { tier: 'free', daily_usage: 3, daily_limit: 50 } }
-    });
-    await tick(w);
-    // client-side validation first
-    setVal(d, 'reg-email', 'not-an-email'); setVal(d, 'reg-pass', 'short');
-    submit(d, 'register-form'); await tick(w);
-    ok('invalid email blocked client-side with a clear message',
-      /valid email/i.test(txt(d, 'auth-msg')), txt(d, 'auth-msg'));
-    ok('no request sent for invalid input', calls.length === 0);
-
-    setVal(d, 'reg-email', 'user@example.com'); setVal(d, 'reg-pass', 'password123');
-    submit(d, 'register-form'); await tick(w, 30);
-    const regCall = calls.find(c => c.url.includes('/auth/register'));
-    ok('POST /auth/register sent', !!regCall && regCall.method === 'POST');
-    const body = JSON.parse(regCall.body);
-    ok('register payload has email', body.email === 'user@example.com');
-    ok('register payload has password', body.password === 'password123');
-    ok('register payload has device_fingerprint (req 7)', /^[0-9a-f]{16}$/.test(body.device_fingerprint), body.device_fingerprint);
-    ok('auth section hidden after success (req 2)', hidden(d, 'auth-section'));
-    ok('dashboard shown after success (req 2)', !hidden(d, 'dashboard'));
-    ok('API key displayed in full (req 3)', txt(d, 'api-key') === 'xbp_REG_key_123', txt(d, 'api-key'));
-    ok('tier badge shows FREE (req 3)', txt(d, 'tier-badge') === 'FREE');
-    ok('tier badge has colour class (req 3)', d.getElementById('tier-badge').className.includes('badge free'));
-    ok('daily usage/limit shown (req 3)', txt(d, 'usage') === '3 / 50 checks today', txt(d, 'usage'));
-    ok('usage meter width set', d.getElementById('usage-bar').style.width === '6%');
-    ok('key persisted to localStorage', w.localStorage.getItem('xbsp_api_key') === 'xbp_REG_key_123');
-    ok('copy button present (req 3)', !!d.getElementById('btn-copy-key'));
-  }
-
-  /* ===================================================================== */
-  section('4. Login flow (regression: checked access_token but stored api_key)');
-  {
-    const { document: d, window: w, calls } = makeDom({
-      '/auth/login': { body: { api_key: 'xbp_LOGIN_key_999', tier: 'premium' } },
-      '/user/me': { body: { tier: 'premium', daily_usage: 12, daily_limit: 100 } }
-    });
-    await tick(w);
-    click(d, 'tab-login');
-    setVal(d, 'login-email', 'user@example.com'); setVal(d, 'login-pass', 'password123');
-    submit(d, 'login-form'); await tick(w, 30);
-    const c = calls.find(x => x.url.includes('/auth/login'));
-    ok('POST /auth/login sent with email+password',
-      !!c && JSON.parse(c.body).email === 'user@example.com' && JSON.parse(c.body).password === 'password123');
-    ok('login with api_key response now succeeds (regression fixed)', !hidden(d, 'dashboard'));
-    ok('API key from login displayed', txt(d, 'api-key') === 'xbp_LOGIN_key_999', txt(d, 'api-key'));
-    ok('premium badge rendered', txt(d, 'tier-badge') === 'PREMIUM' && d.getElementById('tier-badge').className.includes('premium'));
-    ok('password field cleared after login', d.getElementById('login-pass').value === '');
-  }
-  {
-    const { document: d, window: w } = makeDom({
-      '/auth/login': { body: { access_token: 'xbp_TOK_555' } },
-      '/user/me': { body: { tier: 'pro', daily_usage: 0, daily_limit: 5000 } }
-    });
-    await tick(w);
-    click(d, 'tab-login');
-    setVal(d, 'login-email', 'u@e.com'); setVal(d, 'login-pass', 'pw12345678');
-    submit(d, 'login-form'); await tick(w, 30);
-    ok('login also tolerates an access_token-shaped response', !hidden(d, 'dashboard') && txt(d, 'api-key') === 'xbp_TOK_555');
-    ok('PRO tier badge rendered', txt(d, 'tier-badge') === 'PRO' && d.getElementById('tier-badge').className.includes('pro'));
-  }
-  {
-    const { document: d, window: w, pageErrors } = makeDom({
-      '/auth/login': { status: 401, body: { detail: 'Incorrect email or password' } }
-    });
-    await tick(w);
-    click(d, 'tab-login');
-    setVal(d, 'login-email', 'u@e.com'); setVal(d, 'login-pass', 'wrongpass');
-    submit(d, 'login-form'); await tick(w, 30);
-    ok('401 login shows the server error message (req 9)',
-      /Incorrect email or password/.test(txt(d, 'auth-msg')), txt(d, 'auth-msg'));
-    ok('error message uses the error style', !!d.querySelector('#auth-msg .status.error'));
-    ok('auth section stays visible on failed login', !hidden(d, 'auth-section'));
-    ok('no uncaught errors on 401', pageErrors.length === 0, JSON.stringify(pageErrors));
-  }
-
-  /* ===================================================================== */
-  section('5. Error handling (req 9)');
-  {
-    const { document: d, window: w, pageErrors } = makeDom({ '/auth/register': { throwNetwork: true } });
-    await tick(w);
-    setVal(d, 'reg-email', 'u@e.com'); setVal(d, 'reg-pass', 'password123');
-    submit(d, 'register-form'); await tick(w, 30);
-    ok('network failure shows a friendly message',
-      /Network error/i.test(txt(d, 'auth-msg')), txt(d, 'auth-msg'));
-    ok('page did not crash on network failure', pageErrors.length === 0, JSON.stringify(pageErrors));
-    ok('register button re-enabled after failure', !d.getElementById('btn-register').disabled);
-  }
-  {
-    const { document: d, window: w } = makeDom({ '/auth/register': { status: 429, body: {} } });
-    await tick(w);
-    setVal(d, 'reg-email', 'u@e.com'); setVal(d, 'reg-pass', 'password123');
-    submit(d, 'register-form'); await tick(w, 30);
-    ok('429 maps to a rate-limit message', /Rate limit/i.test(txt(d, 'auth-msg')), txt(d, 'auth-msg'));
-  }
-  {
-    const { document: d, window: w } = makeDom({ '/auth/register': { status: 500, body: '<html>Server Blew Up</html>' } });
-    await tick(w);
-    setVal(d, 'reg-email', 'u@e.com'); setVal(d, 'reg-pass', 'password123');
-    submit(d, 'register-form'); await tick(w, 30);
-    ok('500 with a non-JSON body is handled, not thrown',
-      d.querySelector('#auth-msg .status.error') !== null, txt(d, 'auth-msg'));
-  }
-  {
-    const { document: d, window: w } = makeDom({
-      '/auth/login': { body: { api_key: 'k1' } },
-      '/user/me': { status: 401, body: { detail: 'Invalid API key' } }
-    });
-    await tick(w);
-    click(d, 'tab-login');
-    setVal(d, 'login-email', 'u@e.com'); setVal(d, 'login-pass', 'password123');
-    submit(d, 'login-form'); await tick(w, 30);
-    ok('stale/revoked key: 401 on /user/me returns user to login',
-      !hidden(d, 'auth-section') && hidden(d, 'dashboard'));
-    ok('stale key message explains what happened',
-      /no longer valid|log in again/i.test(txt(d, 'auth-msg')), txt(d, 'auth-msg'));
-    ok('stale key purged from storage', w.localStorage.getItem('xbsp_api_key') === null);
-  }
-
-  /* ===================================================================== */
-  section('6. Check functionality + signature verification (req 5, 8)');
-  {
-    const payload = {
-      status: 'hit',
-      email: 'target@example.com',
-      gamertag: 'TestPlayer',
-      watermark: 'Provided by @yorichiiprime'
+    const routes = {
+      '/auth/register': { status: 201, body: { api_key: 'xbsp_FULL_REGISTRATION_KEY', tier: 'free', session: 'active' } },
+      '/user/me': { body: profile('free') },
+      '/microsoft/status': { body: disconnected(true) }
     };
-    const { document: d, window: w, calls, pageErrors } = makeDom({
-      '/auth/login': { body: { api_key: 'k1' } },
-      '/user/me': { body: { tier: 'pro', daily_usage: 1, daily_limit: 5000 } },
-      '/check': { body: Object.assign({}, payload, { signature: sign(payload) }) }
-    });
-    await tick(w);
-    click(d, 'tab-login');
-    setVal(d, 'login-email', 'u@e.com'); setVal(d, 'login-pass', 'password123');
-    submit(d, 'login-form'); await tick(w, 30);
+    const { document: d, window: w, calls, pageErrors } = makeDom(routes);
+    await tick();
+    set(d, 'reg-email', 'bad'); set(d, 'reg-pass', 'short');
+    submit(d, 'register-form'); await tick(5);
+    ok('invalid registration is blocked client-side', /valid email/i.test(text(d, 'auth-msg')));
+    ok('invalid registration sends no register request', !calls.some(c => c.pathname === '/auth/register'));
 
-    setVal(d, 'check-email', 'target@example.com');
-    setVal(d, 'check-pass', 'targetpass');
-    setVal(d, 'check-proxies', 'http://u:p@1.2.3.4:8080\r\nsocks5://5.6.7.8:1080\r\n# comment\r\nhttp://u:p@1.2.3.4:8080\r\n');
-    d.getElementById('check-proxies').dispatchEvent(new w.Event('input', { bubbles: true }));
-    ok('CRLF + duplicate + comment proxies normalised (regression)',
-      txt(d, 'proxy-count') === '2 proxies queued', txt(d, 'proxy-count'));
-
-    submit(d, 'check-form'); await tick(w, 60);
-
-    const cc = calls.find(x => x.url.includes('/check'));
-    ok('POST /check sent', !!cc && cc.method === 'POST');
-    ok('Bearer token attached to /check (req 5)', cc.headers['Authorization'] === 'Bearer k1', JSON.stringify(cc.headers));
-    const cbody = JSON.parse(cc.body);
-    ok('check body has email+password', cbody.email === 'target@example.com' && cbody.password === 'targetpass');
-    ok('proxies parsed without stray \\r',
-      JSON.stringify(cbody.proxies) === JSON.stringify(['http://u:p@1.2.3.4:8080', 'socks5://5.6.7.8:1080']),
-      JSON.stringify(cbody.proxies));
-
-    const res = d.getElementById('result');
-    ok('status displayed (req 5)', /hit/.test(res.textContent));
-    ok('watermark displayed (req 5)', /Provided by @yorichiiprime/.test(res.textContent));
-    ok('watermark match badge shown (req 8)', /matches expected/.test(res.textContent));
-    ok('signature displayed (req 5)', res.textContent.includes(sign(payload)));
-    ok('valid HMAC shows the green check (req 8)', res.querySelector('.pill.ok') !== null && /Signature valid/.test(res.textContent), res.textContent.slice(0, 300));
-    ok('raw payload rendered', res.querySelector('pre') !== null);
-    ok('no uncaught errors during check', pageErrors.length === 0, JSON.stringify(pageErrors));
-  }
-  {
-    const payload = { status: 'hit', watermark: 'Provided by @yorichiiprime' };
-    const { document: d, window: w } = makeDom({
-      '/auth/login': { body: { api_key: 'k1' } },
-      '/user/me': { body: { tier: 'free', daily_usage: 0, daily_limit: 10 } },
-      '/check': { body: Object.assign({}, payload, { signature: sign({ status: 'hit', watermark: 'Provided by @yorichiiprime', email: 'INJECTED@x.com' }) }) }
-    });
-    await tick(w);
-    click(d, 'tab-login');
-    setVal(d, 'login-email', 'u@e.com'); setVal(d, 'login-pass', 'password123');
-    submit(d, 'login-form'); await tick(w, 30);
-    setVal(d, 'check-email', 'a@b.c'); setVal(d, 'check-pass', 'p');
-    submit(d, 'check-form'); await tick(w, 60);
-    const res = d.getElementById('result');
-    ok('tampered payload shows a red X, not a false green',
-      res.querySelector('.pill.bad') !== null && /Signature mismatch/.test(res.textContent), res.textContent.slice(0, 250));
-  }
-  {
-    const { document: d, window: w } = makeDom({
-      '/auth/login': { body: { api_key: 'k1' } },
-      '/user/me': { body: { tier: 'free', daily_usage: 0, daily_limit: 10 } },
-      '/check': { body: { status: 'bad', watermark: 'Provided by @yorichiiprime' } }
-    });
-    await tick(w);
-    click(d, 'tab-login');
-    setVal(d, 'login-email', 'u@e.com'); setVal(d, 'login-pass', 'password123');
-    submit(d, 'login-form'); await tick(w, 30);
-    setVal(d, 'check-email', 'a@b.c'); setVal(d, 'check-pass', 'p');
-    submit(d, 'check-form'); await tick(w, 60);
-    const res = d.getElementById('result');
-    ok('missing signature -> neutral state, not a false red X',
-      res.querySelector('.pill.na') !== null && /No signature returned/.test(res.textContent), res.textContent.slice(0, 250));
-    ok('missing signature does not throw (regression: .match on undefined)', true);
-  }
-  {
-    const { document: d, window: w, pageErrors } = makeDom({
-      '/auth/login': { body: { api_key: 'k1' } },
-      '/user/me': { body: { tier: 'free', daily_usage: 0, daily_limit: 10 } },
-      '/check': { status: 500, body: { detail: 'Upstream checker exploded' } }
-    });
-    await tick(w);
-    click(d, 'tab-login');
-    setVal(d, 'login-email', 'u@e.com'); setVal(d, 'login-pass', 'password123');
-    submit(d, 'login-form'); await tick(w, 30);
-    setVal(d, 'check-email', 'a@b.c'); setVal(d, 'check-pass', 'p');
-    submit(d, 'check-form'); await tick(w, 60);
-    const res = d.getElementById('result');
-    ok('check 5xx shows an error, does not hang on "Checking..."',
-      /Upstream checker exploded/.test(res.textContent) && !/Running check/.test(res.textContent), res.textContent.slice(0, 200));
-    ok('check button re-enabled after failure', !d.getElementById('btn-check').disabled);
-    ok('no uncaught errors on check failure', pageErrors.length === 0, JSON.stringify(pageErrors));
-  }
-  {
-    const { document: d, window: w, pageErrors } = makeDom({
-      '/auth/login': { body: { api_key: 'k1' } },
-      '/user/me': { body: { tier: 'free', daily_usage: 0, daily_limit: 10 } },
-      '/check': { body: {
-        status: '<img src=x onerror="window.__xss=1">',
-        watermark: '<script>window.__xss2=1<\/script>Provided by @yorichiiprime',
-        detail: '<b>bold</b>'
-      } }
-    });
-    await tick(w);
-    click(d, 'tab-login');
-    setVal(d, 'login-email', 'u@e.com'); setVal(d, 'login-pass', 'password123');
-    submit(d, 'login-form'); await tick(w, 30);
-    setVal(d, 'check-email', 'a@b.c'); setVal(d, 'check-pass', 'p');
-    submit(d, 'check-form'); await tick(w, 60);
-    const res = d.getElementById('result');
-    ok('XSS: no injected <img> element from server data', res.querySelector('img') === null);
-    ok('XSS: no injected <script> element from server data', res.querySelector('script') === null);
-    ok('XSS: no injected <b> element from server data', res.querySelector('b') === null);
-    ok('XSS: handlers never fired', w.__xss !== 1 && w.__xss2 !== 1);
-    ok('no uncaught errors while rendering hostile payload', pageErrors.length === 0, JSON.stringify(pageErrors));
+    set(d, 'reg-email', 'student@example.com'); set(d, 'reg-pass', 'password123');
+    submit(d, 'register-form'); await tick(45);
+    const registration = calls.find(c => c.pathname === '/auth/register');
+    const body = registration ? JSON.parse(registration.body) : {};
+    ok('POST /auth/register is sent', registration && registration.method === 'POST');
+    ok('registration carries app credentials and installation id', body.email === 'student@example.com' && body.password === 'password123' && /^[0-9a-f]{32}$/.test(body.device_fingerprint || ''));
+    ok('dashboard opens after backend session creation', !hidden(d, 'dashboard') && hidden(d, 'auth-section'));
+    ok('full API key is displayed only in current memory', text(d, 'api-key') === 'xbsp_FULL_REGISTRATION_KEY');
+    ok('API key never enters localStorage', w.localStorage.getItem('xbsp_api_key') === null);
+    ok('profile email and tier render', text(d, 'profile-email') === 'student@example.com' && text(d, 'tier-badge') === 'FREE');
+    ok('disconnected Microsoft state renders', /Not connected/.test(text(d, 'xbox-status')));
+    ok('Microsoft link is available when configured', $(d, 'btn-ms-connect').getAttribute('href') === '/microsoft/connect');
+    ok('browser API calls use same-origin cookies', calls.filter(c => c.pathname.startsWith('/user/') || c.pathname.startsWith('/microsoft/')).every(c => c.credentials === 'same-origin' && !c.headers.Authorization));
+    ok('no page errors during registration', pageErrors.length === 0, JSON.stringify(pageErrors));
   }
 
-  /* ===================================================================== */
-  section('7. API key regeneration (req 4)');
+  section('3. Login, errors and logout');
   {
-    const { document: d, window: w, calls } = makeDom({
-      '/auth/login': { body: { api_key: 'OLD_KEY' } },
-      '/user/me': { body: { tier: 'free', daily_usage: 0, daily_limit: 10 } },
-      '/user/key/revoke': { body: { api_key: 'NEW_KEY' } }
-    });
-    await tick(w);
+    const routes = {
+      '/auth/login': { body: { api_key_preview: 'xbsp_logi…_KEY', tier: 'premium', session: 'active' } },
+      '/auth/logout': { status: 204, body: '' },
+      '/user/me': { body: profile('premium') },
+      '/microsoft/status': { body: disconnected(true) }
+    };
+    const { document: d, window: w, calls } = makeDom(routes);
+    await tick();
     click(d, 'tab-login');
-    setVal(d, 'login-email', 'u@e.com'); setVal(d, 'login-pass', 'password123');
-    submit(d, 'login-form'); await tick(w, 30);
+    set(d, 'login-email', 'student@example.com'); set(d, 'login-pass', 'password123');
+    submit(d, 'login-form'); await tick(45);
+    ok('successful login opens dashboard', !hidden(d, 'dashboard'));
+    ok('password field is cleared', $(d, 'login-pass').value === '');
+    ok('premium tier renders', text(d, 'tier-badge') === 'PREMIUM');
+    ok('login restores only a key preview', /…/.test(text(d, 'api-key')) && $(d, 'btn-copy-key').disabled);
+    ok('login key is not persisted', w.localStorage.getItem('xbsp_api_key') === null);
+    click(d, 'btn-logout'); await tick(30);
+    ok('logout calls backend', calls.some(c => c.pathname === '/auth/logout' && c.method === 'POST'));
+    ok('logout returns to login form', !hidden(d, 'auth-section') && !hidden(d, 'login-form') && hidden(d, 'dashboard'));
+  }
+  {
+    const { document: d } = makeDom({ '/auth/login': { status: 401, body: { detail: 'Incorrect email or password' } } });
+    await tick(); click(d, 'tab-login');
+    set(d, 'login-email', 'student@example.com'); set(d, 'login-pass', 'wrong-password');
+    submit(d, 'login-form'); await tick(20);
+    ok('401 login shows backend error', /Incorrect email or password/.test(text(d, 'auth-msg')));
+    ok('failed login keeps auth screen visible', !hidden(d, 'auth-section'));
+  }
+  {
+    const { document: d, pageErrors } = makeDom({ '/auth/register': { throwNetwork: true } });
+    await tick(); set(d, 'reg-email', 'student@example.com'); set(d, 'reg-pass', 'password123');
+    submit(d, 'register-form'); await tick(20);
+    ok('network failure is user-friendly', /Network error/.test(text(d, 'auth-msg')));
+    ok('submit button recovers after network error', !$(d, 'btn-register').disabled);
+    ok('network failure causes no uncaught page errors', pageErrors.length === 0, JSON.stringify(pageErrors));
+  }
 
-    ok('confirmation panel hidden until requested (req 4)', hidden(d, 'revoke-confirm'));
+  section('4. Server-side session restore');
+  {
+    const routes = {
+      '/user/me': { body: profile('pro') },
+      '/microsoft/status': { body: disconnected(true) }
+    };
+    const { document: d } = makeDom(routes, { initialSession: true });
+    await tick(45);
+    ok('valid HttpOnly session restores dashboard', !hidden(d, 'dashboard') && hidden(d, 'auth-section'));
+    ok('restored account shows API-key preview only', text(d, 'api-key') === 'xbsp_demo…1234');
+    ok('copy disabled without full in-memory key', $(d, 'btn-copy-key').disabled);
+    ok('restored PRO tier renders', text(d, 'tier-badge') === 'PRO');
+  }
+
+  section('5. Real Xbox profile presentation and disconnect');
+  {
+    let connected = true;
+    const routes = {
+      '/user/me': { body: profile('free') },
+      '/microsoft/status': () => ({ body: connected ? {
+        connected: true,
+        profile: {
+          gamertag: 'ConsentPlayer', gamerscore: 9876, account_tier: 'Gold',
+          last_checked_at: '2026-09-09T20:00:00+00:00'
+        },
+        capabilities: { oauth_configured: true, game_pass_entitlement_access: false },
+        watermark: 'Provided by @yorichiiprime', signature: GOOD_SIG
+      } : disconnected(true) }),
+      '/microsoft/disconnect': () => { connected = false; return { body: { message: 'disconnected' } }; }
+    };
+    const { document: d, calls, pageErrors } = makeDom(routes, { initialSession: true });
+    await tick(45);
+    ok('connected badge renders', /Xbox profile connected/.test(text(d, 'xbox-status')));
+    ok('real profile fields render', /ConsentPlayer/.test(text(d, 'xbox-result')) && /9876/.test(text(d, 'xbox-result')));
+    ok('well-formed server signature is described honestly', /Server signature present/.test(text(d, 'xbox-result')));
+    ok('refresh link remains official backend OAuth route', $(d, 'btn-ms-connect').getAttribute('href') === '/microsoft/connect' && /Refresh/.test($(d, 'btn-ms-connect').textContent));
+    ok('disconnect action is visible', !hidden(d, 'btn-ms-disconnect'));
+    click(d, 'btn-ms-disconnect'); await tick(35);
+    ok('disconnect POST is sent', calls.some(c => c.pathname === '/microsoft/disconnect' && c.method === 'POST'));
+    ok('UI becomes disconnected after response', /Not connected/.test(text(d, 'xbox-status')) && hidden(d, 'btn-ms-disconnect'));
+    ok('no page errors in connection lifecycle', pageErrors.length === 0, JSON.stringify(pageErrors));
+  }
+  {
+    const routes = {
+      '/user/me': { body: profile() },
+      '/microsoft/status': { body: disconnected(false) }
+    };
+    const { document: d } = makeDom(routes, { initialSession: true });
+    await tick(40);
+    ok('unconfigured OAuth has a clear operator message', /MICROSOFT_CLIENT_ID/.test(text(d, 'xbox-result')));
+    ok('unconfigured OAuth link is disabled', !$(d, 'btn-ms-connect').hasAttribute('href') && $(d, 'btn-ms-connect').getAttribute('aria-disabled') === 'true');
+  }
+  {
+    const hostile = {
+      connected: true,
+      profile: { gamertag: '<img src=x onerror="window.__xss=1">', gamerscore: '<script>bad()<\/script>' },
+      capabilities: { oauth_configured: true }, watermark: 'bad', signature: 'not-valid'
+    };
+    const { document: d, window: w } = makeDom({ '/user/me': { body: profile() }, '/microsoft/status': { body: hostile } }, { initialSession: true });
+    await tick(40);
+    const result = $(d, 'xbox-result');
+    ok('profile data is rendered with textContent (no XSS nodes)', !result.querySelector('img') && !result.querySelector('script') && w.__xss !== 1);
+    ok('malformed signature gets a warning', /Malformed signature/.test(result.textContent));
+  }
+
+  section('6. API key regeneration');
+  {
+    const routes = {
+      '/user/me': { body: profile() },
+      '/microsoft/status': { body: disconnected(true) },
+      '/user/key/revoke': { body: { api_key: 'xbsp_NEW_FULL_KEY' } }
+    };
+    const { document: d, window: w, calls } = makeDom(routes, { initialSession: true });
+    await tick(40);
     click(d, 'btn-revoke');
-    ok('regenerate requires explicit confirmation (req 4)', !hidden(d, 'revoke-confirm'));
-    ok('no revoke request sent before confirming', !calls.some(c => c.url.includes('/revoke')));
-    click(d, 'btn-revoke-no');
-    ok('cancel closes the confirmation', hidden(d, 'revoke-confirm'));
-
-    click(d, 'btn-revoke');
-    click(d, 'btn-revoke-yes'); await tick(w, 40);
-    const rv = calls.find(c => c.url.includes('/user/key/revoke'));
-    ok('POST /user/key/revoke sent after confirming', !!rv && rv.method === 'POST');
-    ok('dashboard immediately shows the NEW key', txt(d, 'api-key') === 'NEW_KEY', txt(d, 'api-key'));
-    ok('localStorage holds only the NEW key (old key dropped)', w.localStorage.getItem('xbsp_api_key') === 'NEW_KEY');
-    ok('subsequent calls use the new Bearer token (old key dead)',
-      calls.filter(c => c.headers['Authorization'] === 'Bearer NEW_KEY').length > 0);
-    ok('no call still carries the old key after revoke',
-      calls.filter(c => c.url.includes('/revoke') === false && c.headers['Authorization'] === 'Bearer OLD_KEY' && calls.indexOf(c) > calls.indexOf(rv)).length === 0);
+    ok('rotation requires explicit confirmation', !hidden(d, 'revoke-confirm'));
+    click(d, 'btn-revoke-yes'); await tick(35);
+    ok('rotation endpoint called', calls.some(c => c.pathname === '/user/key/revoke' && c.method === 'POST'));
+    ok('new key is shown and copy enabled', text(d, 'api-key') === 'xbsp_NEW_FULL_KEY' && !$(d, 'btn-copy-key').disabled);
+    ok('rotated key is not persisted', w.localStorage.getItem('xbsp_api_key') === null);
   }
 
-  /* ===================================================================== */
-  section('8. Admin panel (req 6)');
+  section('7. Admin table and secret masking');
   {
-    const { document: d, window: w, calls, pageErrors } = makeDom({
+    const routes = {
       '/admin/users': { body: { users: [
-        { email: 'a@example.com', tier: 'pro', daily_usage: 12, daily_limit: 5000, created_at: '2026-01-02', api_key: 'xbp_SECRET_abcd1234efgh', device_fingerprint: 'deadbeefcafebabe' },
-        { email: 'b@example.com', tier: 'free', daily_usage: 0, daily_limit: 10, created_at: '2026-02-03', api_key: 'xbp_SECRET_999988887777', device_fingerprint: '0123456789abcdef' }
+        { id: 1, email: 'a@example.com', tier: 'pro', is_active: 1, daily_usage: 0, daily_limit: 100, audit_events: 1, api_key_preview: 'xbsp_abcd…1234' },
+        { id: 2, email: 'b@example.com', tier: 'free', is_active: 1, daily_usage: 0, daily_limit: 2, audit_events: 0, api_key_preview: 'xbsp_efgh…5678' }
       ] } }
-    });
-    await tick(w);
-    ok('admin hidden by default (req 6)', hidden(d, 'admin-section'));
-    click(d, 'admin-trigger');
-    ok('footer trigger reveals the admin section (req 6)', !hidden(d, 'admin-section'));
-    click(d, 'btn-admin-close');
-    ok('admin section can be hidden again', hidden(d, 'admin-section'));
-    d.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'A', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
-    ok('Ctrl+Shift+A also reveals admin', !hidden(d, 'admin-section'));
-
-    submit(d, 'admin-form'); await tick(w, 20);
-    ok('admin requires a key first', /Enter the admin API key/i.test(txt(d, 'admin-msg')), txt(d, 'admin-msg'));
-
-    setVal(d, 'admin-key', 'ADMIN_SUPER_SECRET');
-    submit(d, 'admin-form'); await tick(w, 40);
-    const ac = calls.find(c => c.url.includes('/admin/users'));
-    ok('GET /admin/users requested', !!ac && ac.method === 'GET');
-    ok('X-Admin-Key header sent (req 6)', ac.headers['X-Admin-Key'] === 'ADMIN_SUPER_SECRET', JSON.stringify(ac.headers));
-    const out = d.getElementById('admin-output');
-    ok('users rendered as a table (readable, req 6)', out.querySelector('table') !== null);
-    ok('user count reported', /2 users/.test(out.textContent), out.textContent.slice(0, 120));
-    ok('emails displayed', out.textContent.includes('a@example.com') && out.textContent.includes('b@example.com'));
-    ok('tiers displayed', out.textContent.includes('pro') && out.textContent.includes('free'));
-    ok('api_key masked in the table', !out.textContent.includes('xbp_SECRET_abcd1234efgh'));
-    ok('device_fingerprint masked in the table', !out.textContent.includes('deadbeefcafebabe'));
-    ok('no uncaught errors in admin flow', pageErrors.length === 0, JSON.stringify(pageErrors));
-  }
-  {
-    const { document: d, window: w, pageErrors } = makeDom({ '/admin/users': { status: 403, body: { detail: 'Invalid admin key' } } });
-    await tick(w);
-    click(d, 'admin-trigger');
-    setVal(d, 'admin-key', 'wrong');
-    submit(d, 'admin-form'); await tick(w, 40);
-    ok('admin 403 shows a friendly error', /Invalid admin key/.test(txt(d, 'admin-msg')), txt(d, 'admin-msg'));
-    ok('no crash on admin failure', pageErrors.length === 0, JSON.stringify(pageErrors));
+    };
+    const { document: d, calls, pageErrors } = makeDom(routes);
+    await tick(); click(d, 'admin-trigger');
+    ok('admin is hidden until explicitly opened', !hidden(d, 'admin-section'));
+    submit(d, 'admin-form'); await tick(5);
+    ok('admin key required client-side', /Enter the admin API key/.test(text(d, 'admin-msg')));
+    set(d, 'admin-key', 'qa-admin'); submit(d, 'admin-form'); await tick(25);
+    const request = calls.find(c => c.pathname === '/admin/users');
+    ok('admin key is sent only in X-Admin-Key header', request && request.headers['X-Admin-Key'] === 'qa-admin');
+    ok('admin users render in table', !!$(d, 'admin-output').querySelector('table') && /a@example.com/.test(text(d, 'admin-output')));
+    ok('full secret material is absent', !/FULL|password_hash|device_fingerprint/.test(text(d, 'admin-output')));
+    ok('admin rendering has no page errors', pageErrors.length === 0, JSON.stringify(pageErrors));
   }
 
-  /* ===================================================================== */
-  section('9. Session restore + sign out');
-  {
-    const { document: doc, window: w } = makeDom(
-      { '/user/me': { body: { tier: 'premium', daily_usage: 7, daily_limit: 100 } } },
-      { preset: { xbsp_api_key: 'RESTORED_KEY' } }
-    );
-    await tick(w, 40);
-    ok('stored key restores the dashboard on load', !hidden(doc, 'dashboard'));
-    ok('auth section hidden when a session is restored', hidden(doc, 'auth-section'));
-    ok('restored key displayed in full', txt(doc, 'api-key') === 'RESTORED_KEY', txt(doc, 'api-key'));
-    ok('restored profile renders tier', txt(doc, 'tier-badge') === 'PREMIUM', txt(doc, 'tier-badge'));
-    ok('restored profile renders usage', txt(doc, 'usage') === '7 / 100 checks today', txt(doc, 'usage'));
-    click(doc, 'btn-logout');
-    ok('sign out returns to the login tab', !hidden(doc, 'auth-section') && !hidden(doc, 'login-form'));
-    ok('sign out clears the stored key', w.localStorage.getItem('xbsp_api_key') === null);
-  }
+  section('8. Static security, accessibility and production checks');
+  ok('no target-account password field exists', !/id="check-pass"|Account Password|Run Check/.test(HTML));
+  ok('no proxy input or proxy rotation copy exists', !/id="check-proxies"|proxies queued/i.test(HTML));
+  ok('no browser HMAC secret exists', !/HMAC_SECRET|dev-secret-change-in-prod/.test(HTML));
+  ok('browser auth never loads an API key from storage', !/storeGet\(['"]xbsp_api_key/.test(HTML));
+  ok('official OAuth route is linked', /href="\/microsoft\/connect"/.test(HTML));
+  ok('Game Pass partner limitation is disclosed', /Partner Center publishers/.test(HTML));
+  ok('noscript fallback exists', HTML.includes('<noscript>'));
+  ok('responsive viewport exists', /name="viewport"/.test(HTML));
+  ok('reduced motion is respected', /prefers-reduced-motion/.test(HTML));
+  ok('all buttons have explicit type', !/<button(?![^>]*\btype=)/.test(HTML));
+  ok('async regions use aria-live', (HTML.match(/aria-live="polite"/g) || []).length >= 4);
+  ok('external account link protects opener', /target="_blank" rel="noopener noreferrer"/.test(HTML));
+  ok('production page has no seeded demo login', !/demo@example\.com|password123\s*\(premium\)/.test(HTML));
 
-  section('10. Markup / a11y / responsive static checks');
-  {
-    const noJs = HTML.includes('<noscript>');
-    ok('noscript fallback present', noJs);
-    ok('viewport meta present', /name="viewport"/.test(HTML));
-    ok('color-scheme declared', /name="color-scheme"/.test(HTML));
-    ok('theme-color declared', /name="theme-color"/.test(HTML));
-    ok('mobile media query present', /@media \(max-width: 640px\)/.test(HTML));
-    ok('reduced-motion respected', /prefers-reduced-motion/.test(HTML));
-    ok('inputs >=16px (prevents iOS focus zoom)', /font-size: 16px/.test(HTML));
-    ok('grid uses min() to avoid overflow', /minmax\(min\(220px, 100%\)/.test(HTML));
-    ok('long strings wrap (no horizontal overflow)', /overflow-wrap: anywhere/.test(HTML) && /word-break: break-all/.test(HTML));
-    ok('body has overflow-x guard', /overflow-x: hidden/.test(HTML));
-    ok('labels wired to inputs', (HTML.match(/<label for="/g) || []).length >= 8);
-    ok('aria-live regions for async messages', (HTML.match(/aria-live="polite"/g) || []).length >= 4);
-    ok('autocomplete attributes present', /autocomplete="email"/.test(HTML) && /autocomplete="current-password"/.test(HTML));
-    ok('all buttons have an explicit type', !/<button(?![^>]*\btype=)/.test(HTML), (HTML.match(/<button(?![^>]*\btype=)/g) || []).join('|'));
-    ok('no inline onclick handlers remain', !/onclick=/.test(HTML));
-    ok('referrer policy set (credentials not leaked)', /name="referrer" content="no-referrer"/.test(HTML));
-    ok('inline favicon (no 404 noise)', /rel="icon"/.test(HTML));
-  }
-
-  console.log('\n  (environment gaps ignored, not page faults: ' + envGapsTotal + ')');
-  console.log('='.repeat(60));
-  console.log(`  \x1b[1m${pass} passed, ${fail} failed\x1b[0m`);
-  if (failures.length) { console.log('\n  Failures:'); failures.forEach(f => console.log('   - ' + f)); }
+  console.log('\n' + '='.repeat(60));
+  console.log(`  \x1b[1m${pass} passed, ${fail} failed\x1b[0m   (frontend DOM)`);
+  if (failures.length) { console.log('\n  Failures:'); failures.forEach(item => console.log('   - ' + item)); }
   console.log('='.repeat(60));
   process.exit(fail ? 1 : 0);
-})().catch(e => { console.error('HARNESS CRASH:', e); process.exit(2); });
+})().catch(error => { console.error('HARNESS CRASH:', error); process.exit(2); });

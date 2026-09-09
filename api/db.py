@@ -16,6 +16,7 @@ import logging
 import os
 import sqlite3
 import threading
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -39,6 +40,31 @@ def backend_name() -> str:
 
 def using_turso() -> bool:
     return backend_name() == "turso"
+
+
+def is_persistent() -> bool:
+    """Whether the selected backend is expected to survive a process restart."""
+    serverless = bool(os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"))
+    if using_turso():
+        # libsql-client also accepts file: URLs for adapter QA/local use. That
+        # is still ephemeral on a serverless filesystem and must not masquerade
+        # as a remote persistent Turso database.
+        url = os.environ.get("TURSO_DATABASE_URL", "").strip().lower()
+        return not (serverless and url.startswith("file:"))
+    # SQLite is durable for local development, but Vercel/AWS writable storage
+    # lives in /tmp and is explicitly ephemeral between function instances.
+    return not serverless
+
+
+def configuration_warning() -> str | None:
+    """Return an operator-facing database warning without leaking secrets."""
+    if using_turso() and not os.environ.get("TURSO_AUTH_TOKEN"):
+        url = os.environ.get("TURSO_DATABASE_URL", "")
+        if not url.startswith("file:"):
+            return "TURSO_DATABASE_URL is set but TURSO_AUTH_TOKEN is missing"
+    if not is_persistent():
+        return "File-backed storage on this serverless runtime is ephemeral; configure remote Turso for persistent users"
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -102,21 +128,50 @@ async def _resolve_client():
 
 
 def _result_to_dicts(result) -> list[dict]:
-    """Normalise a libsql result set to a list of dicts."""
+    """Normalise a libSQL result set to plain dictionaries.
+
+    ``libsql-client==0.3.x`` returns ``libsql_client.result.Row`` objects.
+    Those rows implement ``Sequence`` and expose ``asdict()``, but they are
+    deliberately *not* ``list`` or ``tuple`` instances.  Restricting the
+    conversion to list/tuple silently produced ``{"value": Row(...)}`` and
+    broke every named lookup in production (login, profile and admin).  Keep
+    this adapter tolerant of both the current SDK and older/mock result types.
+    """
     columns = list(getattr(result, "columns", []) or [])
     rows = list(getattr(result, "rows", []) or [])
-    dicts: list[dict] = []
+    output: list[dict] = []
+
     for row in rows:
-        if isinstance(row, dict):
-            dicts.append(dict(row))
-        elif isinstance(row, (list, tuple)) and columns and len(columns) == len(row):
-            dicts.append(dict(zip(columns, row)))
-        elif isinstance(row, (list, tuple)):
-            # Fallback: index-keyed dict (should not happen with named SELECTs).
-            dicts.append({str(i): value for i, value in enumerate(row)})
+        if isinstance(row, Mapping):
+            output.append(dict(row))
+            continue
+
+        asdict = getattr(row, "asdict", None)
+        if callable(asdict):
+            mapped = asdict()
+            if isinstance(mapped, Mapping):
+                output.append(dict(mapped))
+                continue
+
+        # SDK Row is a non-string Sequence.  Some test doubles only implement
+        # iteration, so fall back to list(row) when possible.
+        values = None
+        if isinstance(row, Sequence) and not isinstance(row, (str, bytes, bytearray)):
+            values = list(row)
         else:
-            dicts.append({"value": row})
-    return dicts
+            try:
+                values = list(row)
+            except (TypeError, ValueError):
+                pass
+
+        if values is not None and columns and len(columns) == len(values):
+            output.append(dict(zip(columns, values)))
+        elif values is not None:
+            output.append({str(i): value for i, value in enumerate(values)})
+        else:
+            output.append({"value": row})
+
+    return output
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +262,9 @@ async def _fetchone_inner(query: str, *args) -> dict | None:
     with _sqlite_lock:
         cursor = conn.execute(query, tuple(args))
         row = cursor.fetchone()
+        # Needed for DML statements using ``RETURNING`` (the atomic quota
+        # consumer uses this); harmless for ordinary SELECT statements.
+        conn.commit()
         return dict(row) if row is not None else None
 
 
@@ -253,22 +311,23 @@ def _split_statements(schema: str) -> list[str]:
     schema has no semicolons inside string literals, so a simple split is
     safe here.
     """
-    statements: list[str] = []
-    for chunk in schema.split(";"):
-        lines = [
-            line for line in chunk.splitlines()
-            if line.strip() and not line.strip().startswith("--")
-        ]
-        stmt = "\n".join(lines).strip()
-        if stmt:
-            statements.append(stmt)
-    return statements
+    # Remove full-line comments *before* splitting. A comment may itself
+    # contain a semicolon and must never turn the preceding CREATE statement
+    # into an "incomplete input" deployment failure.
+    uncommented = "\n".join(
+        line
+        for line in schema.splitlines()
+        if line.strip() and not line.strip().startswith("--")
+    )
+    return [statement.strip() for statement in uncommented.split(";") if statement.strip()]
 
 
 async def init_db() -> None:
     """Create tables from ``migrations/initial.sql`` if they don't exist."""
+    global _db_ready
     if not SCHEMA_PATH.exists():
         raise DatabaseNotConfigured(f"Schema file not found: {SCHEMA_PATH}")
     schema = SCHEMA_PATH.read_text(encoding="utf-8")
     for stmt in _split_statements(schema):
         await _execute_inner(stmt)
+    _db_ready = True
