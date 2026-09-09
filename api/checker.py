@@ -44,13 +44,89 @@ class ProxyManager:
             if not self.proxies:
                 return None
             p = random.choice(self.proxies)
-        parts = p.split(':')
-        if len(parts) >= 4:
-            s = f"http://{parts[2]}:{parts[3]}@{parts[0]}:{parts[1]}"
-        elif len(parts) == 2:
-            s = f"http://{parts[0]}:{parts[1]}"
+        
+        # Normalize proxy string - handle various formats
+        # Expected formats: ip:port, user:pass:ip:port, http://host:port, https://host:port,
+        # socks5://host:port, socks4://host:port, user:pass@host:port
+        proxy = p.strip()
+        lower = proxy.lower()
+        
+        # Remove protocol prefixes (socks5/, socks4/, http/, https/)
+        if lower.startswith('socks5://'):
+            proxy = proxy[9:]  # remove 'socks5://' (9 chars)
+        elif lower.startswith('socks4://'):
+            proxy = proxy[9:]  # remove 'socks4://' (9 chars)
+        elif lower.startswith('http://'):
+            proxy = proxy[7:]  # remove 'http://'
+        elif lower.startswith('https://'):
+            proxy = proxy[8:]  # remove 'https://'
+        
+        # After removing protocol, check for user:pass@host:port format
+        at_idx = proxy.find('@')
+        if at_idx != -1:
+            # Has authentication: user:pass@host:port
+            auth_part = proxy[:at_idx]     # user:pass
+            host_part = proxy[at_idx + 1:]    # host:port
+            
+            # Parse user:pass (could be user:pass or just user)
+            auth_split = auth_part.split(':', 1)
+            user = auth_split[0] if len(auth_split) > 0 else ''
+            # pass = auth_split[1] if len(auth_split) > 1 else ''  # not used for URL
+            
+            # Parse host:port
+            hp_split = host_part.split(':', 1)
+            host = hp_split[0] if len(hp_split) > 0 else ''
+            port = hp_split[1] if len(hp_split) > 1 else ''
+            
+            if host and port:
+                s = f"http://{host}:{port}"
+            else:
+                # Fallback: just use the host part if port missing
+                s = f"http://{host}" if host else f"http://{proxy}"
         else:
-            s = f"http://{p}"
+            # No @ sign - could be host:port or ip:port
+            # Could also be user:pass:ip:port (4 parts from original format)
+            parts = proxy.split(':')
+            
+            if len(parts) >= 4:
+                # Original format: user:pass:ip:port
+                # parts[0]=user, parts[1]=pass, parts[2]=ip, parts[3]=port
+                host = parts[2]
+                port = parts[3]
+                if host and port:
+                    s = f"http://{host}:{port}"
+                else:
+                    s = f"http://{proxy}"
+            elif len(parts) == 3:
+                # Possible format: user:ip:port or ip:port:extra
+                # Check if parts[0] looks like a user (no dots, short) or ip
+                if '.' in parts[0] and len(parts[0]) > 2:
+                    # Likely ip:port:extra - take first two parts
+                    host = parts[0]
+                    port = parts[1]
+                    s = f"http://{host}:{port}" if host and port else f"http://{proxy}"
+                else:
+                    # Could be user:ip:port - skip user, use ip:port
+                    host = parts[1]
+                    port = parts[2]
+                    s = f"http://{host}:{port}" if host and port else f"http://{proxy}"
+            elif len(parts) == 2:
+                # Standard ip:port or host:port
+                host = parts[0]
+                port = parts[1]
+                if host and port:
+                    # Simple validation: port should be numeric
+                    try:
+                        int(port)
+                        s = f"http://{host}:{port}"
+                    except ValueError:
+                        s = f"http://{proxy}"
+                else:
+                    s = f"http://{proxy}"
+            else:
+                # Just a hostname or single part
+                s = f"http://{proxy}"
+        
         return {"http": s, "https": s}
     
     def mark_bad(self, proxy_str):

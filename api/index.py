@@ -347,3 +347,89 @@ async def health():
         "db": "up" if db_ok else "down",
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Admin Status & Analytics
+# ---------------------------------------------------------------------------
+
+@app.get("/admin/status")
+async def admin_status(_: None = Depends(require_admin)):
+    """Get admin dashboard with usage statistics and trends."""
+    from datetime import date, datetime, timezone
+
+    try:
+        # Total users
+        total_users = await db.fetchone("SELECT COUNT(*) AS count FROM users")
+        total_users = total_users["count"] if total_users else 0
+
+        # Active users
+        active_users = await db.fetchone(
+            "SELECT COUNT(*) AS count FROM users WHERE is_active = 1"
+        )
+        active_users = active_users["count"] if active_users else 0
+
+        # Total checks today
+        today = date.today().isoformat()
+        total_checks_today = await db.fetchone(
+            "SELECT COUNT(*) AS count FROM request_logs WHERE DATE(timestamp) = ?",
+            today
+        )
+        total_checks_today = total_checks_today["count"] if total_checks_today else 0
+
+        # Rate limit stats per tier
+        tier_stats = await db.fetchall(
+            """
+            SELECT u.tier, COUNT(u.id) AS user_count,
+                   COALESCE(SUM(d.count), 0) AS total_checks,
+                   COALESCE(AVG(d.count), 0) AS avg_daily_checks
+            FROM users u
+            LEFT JOIN daily_usage d ON d.user_id = u.id AND d.check_date = ?
+            GROUP BY u.tier
+            """,
+            today
+        )
+
+        # Convert to list for JSON serialization
+        tier_list = []
+        for row in tier_stats:
+            tier_list.append({
+                "tier": row["tier"],
+                "user_count": row["user_count"],
+                "total_checks": row["total_checks"],
+                "avg_daily_checks": round(row["avg_daily_checks"], 2)
+            })
+
+        # Recent activity (last 10 requests)
+        recent_logs = await db.fetchall(
+            """
+            SELECT r.id, r.timestamp, r.status, u.email, u.tier
+            FROM request_logs r
+            JOIN users u ON r.user_id = u.id
+            ORDER BY r.timestamp DESC
+            LIMIT 10
+            """
+        )
+
+        recent_activity = []
+        for row in recent_logs:
+            recent_activity.append({
+                "id": row["id"],
+                "timestamp": row["timestamp"],
+                "status": row["status"],
+                "email": row["email"],
+                "tier": row["tier"]
+            })
+
+        return {
+            "total_users": total_users,
+            "active_users": active_users,
+            "total_checks_today": total_checks_today,
+            "tier_distribution": tier_list,
+            "recent_activity": recent_activity,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as exc:
+        raise _db_unavailable(exc) from exc
+
+

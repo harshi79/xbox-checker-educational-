@@ -28,6 +28,20 @@
     --space: 1rem;
   }
 
+    
+    /* Proxy input styling */
+    .proxy-textarea {
+        background: var(--field);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        color: var(--text);
+        font-family: monospace;
+        font-size: 0.875rem;
+    }
+    .proxy-textarea:focus {
+        outline: 2px solid var(--accent);
+        border-color: var(--accent);
+    }
   * { box-sizing: border-box; }
 
   html { -webkit-text-size-adjust: 100%; }
@@ -416,8 +430,8 @@
         <button type="button" class="secondary tiny" id="btn-eye" aria-label="Show password">👁</button>
       </div>
 
-      <label for="check-proxies">Proxies <span class="hint" style="text-transform:none;letter-spacing:0">(one per line, optional)</span></label>
-      <textarea id="check-proxies" rows="4" placeholder="http://user:pass@host:port&#10;socks5://host:port"></textarea>
+      <label for="check-proxies">Proxies <span class="hint" style="text-transform:none;letter-spacing:0">(one per line, optional)</span><p class="hint small">Supported formats: <code>host:port</code>, <code>http://host:port</code>, <code>socks5://host:port</code>, <code>user:pass@host:port</code></p>
+      <textarea id="check-proxies" class="proxy-textarea" rows="4" placeholder="http://user:pass@host:port&#10;socks5://host:port"></textarea>
       <p class="hint" id="proxy-count">0 proxies queued</p>
 
       <button type="submit" id="btn-check">🔍 Run Check</button>
@@ -428,6 +442,12 @@
 
   <!-- ============ ADMIN (hidden until unlocked) ============ -->
   <section id="admin-section" class="card hidden" aria-labelledby="admin-heading">
+  <div class="admin-tabs" role="tablist" aria-label="Admin tabs">
+    <div class="admin-tab" role="tab" aria-controls="admin-users" hidden>Users</div>
+    <div class="admin-tab active" role="tab" aria-controls="admin-status">Status</div>
+    <div class="admin-tab" role="tab" aria-controls="admin-users">Users</div>
+  </div>
+
     <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between">
       <h2 id="admin-heading" style="margin:0">🔐 Admin Panel</h2>
       <button type="button" class="ghost tiny" id="btn-admin-close">Hide</button>
@@ -436,7 +456,15 @@
     <form id="admin-form" novalidate>
       <label for="admin-key">Admin API Key</label>
       <input type="password" id="admin-key" placeholder="X-Admin-Key" autocomplete="off">
-      <button type="submit" id="btn-admin">Load Users</button>
+      
+    <div class="admin-tab" id="admin-tab-status" role="tab" aria-controls="admin-status" hidden>
+      <span>Status</span>
+    </div>
+    <div class="admin-tab-content" id="admin-status" hidden>
+      <div class="loading" id="admin-status-loading">Loading...</div>
+      <div id="admin-status-content"></div>
+    </div>
+<button type="submit" id="btn-admin">Load Users</button>
     </form>
 
     <div id="admin-msg" role="status" aria-live="polite"></div>
@@ -1016,9 +1044,59 @@
         if (seen[p]) return false;
         seen[p] = true;
         return true;
+      })
+      .map(function (p) {
+        // Normalize proxy format
+        // Remove protocol prefixes
+        var normalized = p;
+        var lower = p.toLowerCase();
+        
+        // Handle socks5:// or socks4:// or http:// or https://
+        if (lower.startsWith('socks5://')) {
+          normalized = p.substring('socks5://'.length);
+        } else if (lower.startsWith('socks4://')) {
+          normalized = p.substring('socks4://'.length);
+        } else if (lower.startsWith('http://')) {
+          normalized = p.substring('http://'.length);
+        } else if (lower.startsWith('https://')) {
+          normalized = p.substring('https://'.length);
+        }
+        
+        // Now normalize user:pass@host:port or host:port
+        // Check if it has user:pass@ format
+        var atIndex = normalized.indexOf('@');
+        if (atIndex !== -1) {
+          var authPart = normalized.substring(0, atIndex);
+          var hostPart = normalized.substring(atIndex + 1);
+          // authPart is user:pass, hostPart is host:port
+          var colonIndex = authPart.indexOf(':');
+          if (colonIndex !== -1) {
+            var user = authPart.substring(0, colonIndex);
+            var pass = authPart.substring(colonIndex + 1);
+            // hostPart might be host:port
+            var hostColon = hostPart.indexOf(':');
+            if (hostColon !== -1) {
+              var host = hostPart.substring(0, hostColon);
+              var port = hostPart.substring(hostColon + 1);
+              // Return as ip:port format (backend will add http://)
+              return host + ':' + port;
+            }
+            // No port in host part, just return as is
+            return hostPart;
+          }
+        }
+        
+        // No @ sign, could be host:port or just host or user:pass
+        var colonIndex = normalized.indexOf(':');
+        if (colonIndex !== -1) {
+          // It's host:port format
+          return normalized;
+        }
+        
+        // Just a host, return as is (backend will handle)
+        return normalized;
       });
   }
-
   function updateProxyCount() {
     var n = parseProxies($('check-proxies').value).length;
     $('proxy-count').textContent = n === 0 ? 'No proxies — direct connection' : n + (n === 1 ? ' proxy' : ' proxies') + ' queued';
@@ -1200,14 +1278,18 @@
     clear(out);
     if (!adminKey) { setMsg(msg, 'error', 'Enter the admin API key first.'); $('admin-key').focus(); return; }
 
-    setBusy(btn, true, 'Loading users…');
+    # Determine which tab is active
+    var activeTab = document.querySelector('.admin-tab.active');
+    var targetId = activeTab ? activeTab.getAttribute('aria-controls') : 'admin-users';
+    setBusy(btn, true, 'Loading ' + (targetId === 'admin-status' ? 'status…' : 'users…'));
     setMsg(msg, '', '');
 
     var res;
     try {
       var ctrl = ('AbortController' in window) ? new AbortController() : null;
       var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, REQUEST_TIMEOUT_MS) : null;
-      res = await fetch(API_BASE + '/admin/users', {
+      var endpoint = targetId === 'admin-status' ? '/admin/status' : '/admin/users';
+      res = await fetch(API_BASE + endpoint, {
         headers: { 'X-Admin-Key': adminKey, 'Accept': 'application/json' },
         signal: ctrl ? ctrl.signal : undefined,
         credentials: 'same-origin'
@@ -1217,11 +1299,80 @@
       var timedOut = err && err.name === 'AbortError';
       setMsg(msg, 'error', timedOut
         ? 'The request timed out. Please try again.'
-        : 'Network error — could not reach /admin/users.');
+        : 'Network error — could not reach /admin/' + endpoint + '.');
       return;
     } finally {
       setBusy(btn, false);
+
+    if (!res.ok) {
+      var data = {};
+      try { data = await res.json(); } catch (e) { data = {}; }
+      setMsg(msg, 'error', 'Server error: ' + (data.detail || res.statusText));
+      return;
     }
+    var data = null;
+    try { data = await res.json(); } catch (e) { data = null; }
+
+    if (targetId === 'admin-status') {
+      # Render status dashboard
+      var outContent = $('admin-status-content');
+      var loading = $('admin-status-loading');
+      if (data && data.total_users !== undefined) {
+        loading.hidden = true;
+        outContent.innerHTML = '';
+        # Total users
+        outContent.innerHTML += '<p><strong>Total Users:</strong> ' + data.total_users + '</p>';
+        outContent.innerHTML += '<p><strong>Active Users:</strong> ' + data.active_users + '</p>';
+        outContent.innerHTML += '<p><strong>Checks Today:</strong> ' + data.total_checks_today + '</p>';
+        # Tier distribution
+        if (data.tier_distribution && data.tier_distribution.length > 0) {
+          outContent.innerHTML += '<p><strong>Tier Distribution:</strong></p>';
+          data.tier_distribution.forEach(function (t) {
+            outContent.innerHTML += '<p>' + t.tier + ': ' + t.user_count + ' users, ' + t.total_checks + ' total checks</p>';
+          });
+        }
+        # Recent activity
+        outContent.innerHTML += '<p><strong>Recent Activity:</strong></p>';
+        var recent = data.recent_activity || [];
+        recent.slice(0, 5).forEach(function (a) {
+          var time = a.timestamp ? new Date(a.timestamp).toLocaleString() : 'unknown';
+          outContent.innerHTML += '<p>• ' + (a.email || 'unknown') + ' (' + a.tier + ') - ' + a.status + ' at ' + time + '</p>';
+        });
+        if (recent.length === 0) {
+          outContent.innerHTML += '<p>No recent activity.</p>';
+        }
+      } else {
+        loading.hidden = false;
+        outContent.innerHTML = '<p>No status data available.</p>';
+      }
+      return;
+    }
+
+    # Existing users rendering code (unchanged)
+    var users = Array.isArray(data) ? data
+      : (Array.isArray(data.users) ? data.users
+      : (Array.isArray(data.items) ? data.items
+      : (Array.isArray(data.data) ? data.data : null)));
+
+    if (!users) {
+      setMsg(msg, 'info', 'Response received, but it did not contain a recognisable user list.');
+      out.appendChild(el('pre', { text: JSON.stringify(data, null, 2) }));
+      return;
+    }
+    if (users.length === 0) {
+      setMsg(msg, 'info', 'No users found.');
+      return;
+    }
+
+    # Choose columns that actually exist in the payload.
+    var present = {};
+    users.forEach(function (u) {
+      if (u && typeof u === 'object') Object.keys(u).forEach(function (k) { present[k] = true; });
+    });
+    var cols = ADMIN_COLUMNS.filter(function (c) { return present[c]; });
+    Object.keys(present).forEach(function (k) {
+      if (cols.indexOf(k) < 0 && cols.length < 9) cols.push(k);
+    });    }
 
     var raw = '';
     try { raw = await res.text(); } catch (e) { raw = ''; }

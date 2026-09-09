@@ -1,144 +1,397 @@
-# 🎮 Xbox Checker
+# 🎮 Xbox Checker — Educational Full-Stack Project
 
-Check Xbox & Microsoft account **Game Pass and subscription status** through a clean web console and a signed JSON API.
+## 📚 Project Overview
 
-> 🔒 **Educational project** — only check accounts you own or are explicitly authorised to test. All checks are logged.
+**Xbox Checker** is an educational full-stack SaaS application that teaches modern web development concepts by checking Xbox Live account subscriptions. It's built with:
+
+- **FastAPI** — modern Python web framework
+- **SQLite / Turso** — database integration (local + cloud)
+- **OAuth 2.0** — Microsoft authentication flow
+- **HMAC cryptography** — response signing and verification
+- **Full-stack architecture** — frontend + backend integration
+
+> ⚠️ **Educational Use Only**: This project is designed for learning purposes. Only check accounts you own or are explicitly authorised to test. All operations are logged for educational demonstration.
 
 ---
 
-## Features
-
-- **Real account checks** — Microsoft login → Xbox Live auth → profile, Game Pass & subscription detection (Ultimate / PC / Core / Gold, EA Play, …)
-- **User accounts** — email + password registration with device fingerprinting (one account per device) and API-key authentication
-- **Tiered rate limits** — `free` / `premium` / `pro` daily quotas, tracked per user
-- **Watermarked & signed responses** — every result carries a watermark and an HMAC-SHA256 signature
-- **Admin panel** — list users, change tiers, revoke keys (hidden `X-Admin-Key` flow in the console)
-- **Polished console** — mobile-friendly, accessible, offline-safe UI with proper error handling
-- **Zero-config database** — works out of the box with SQLite; plug in **Turso** for persistent production storage
-- **Vercel-ready** — one-command deploy as a Python serverless function
-
-## Architecture
+## 🏗️ Architecture Diagram
 
 ```
-Browser console (static/index.html)
-        │  JSON + Bearer <api_key>
-        ▼
-FastAPI app (api/index.py) ──► Xbox checker (api/checker.py) ──► live.com / xboxlive.com
-        │
-        ├── auth (api/auth.py) — bcrypt/PBKDF2 passwords, API keys, JWT
-        ├── rate limiting (api/rate_limit.py) — daily quotas per tier
-        ├── watermarking (api/watermark.py) — HMAC signatures
-        └── database (api/db.py) — Turso (libsql) with SQLite fallback
+┌─────────────────────────────────────────────────────────────────┐
+│                        EDUCATIONAL LAYERS                       │
+├─────────────────────────────────────────────────────────────────┤
+│  🌐 FRONTEND (static/index.html)                                 │
+│  • Single-page application                                       │
+│  • DOM manipulation, event handling                               │
+│  • Client-side validation                                        │
+│  • HMAC signature verification (educational demo)                │
+│  • Accessibility (a11y) features                                  │
+├─────────────────────────────────────────────────────────────────┤
+│  🔧 BACKEND (api/index.py - FastAPI)                             │
+│  • RESTful API endpoints                                          │
+│  • Dependency injection                                           │
+│  • Authentication (API keys, JWT)                                 │
+│  • Rate limiting per tier                                         │
+│  • Watermarking + HMAC signing                                    │
+├─────────────────────────────────────────────────────────────────┤
+│  🔐 SERVICES (api/)                                               │
+│  • auth.py — password hashing, API keys, JWT tokens               │
+│  • db.py — Turso + SQLite integration                             │
+│  • checker.py — Xbox Live API integration                         │
+│  • rate_limit.py — daily quotas per user tier                     │
+│  • watermark.py — HMAC-SHA256 signing                             │
+├─────────────────────────────────────────────────────────────────┤
+│  📊 EXTERNAL SERVICES                                              │
+│  • Microsoft login (live.com)                                     │
+│  • Xbox Live API (xboxlive.com)                                   │
+│  • Minecraft services                                             │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## 🚀 Deploy to Vercel
+---
 
-### 1. (Recommended) Create a Turso database
+## 🛠️ Setup & Installation
 
-Without this the app still works, but user data is lost on serverless restarts (ephemeral filesystem).
+### Prerequisites
+
+- Python 3.11+
+- Node.js (for frontend tests only)
+
+### 1. Create a Virtual Environment
 
 ```bash
-curl -sSfL https://get.tur.so/install.sh | bash
-turso auth login
-turso db create xbox-checker
-turso db show xbox-checker --url
-turso db tokens create xbox-checker
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
-### 2. Deploy
+### 2. Install Dependencies
 
 ```bash
-vercel --prod
-```
-
-### 3. Set environment variables
-
-Vercel Dashboard → Project → **Settings → Environment Variables**:
-
-| Variable | Required | Description |
-|---|---|---|
-| `TURSO_DATABASE_URL` | No* | e.g. `libsql://xbox-checker-<org>.turso.io` |
-| `TURSO_AUTH_TOKEN` | No* | Turso auth token |
-| `ADMIN_API_KEY` | **Yes** | Secret for `/admin/*` endpoints |
-| `WATERMARK_SECRET` | **Yes** | Long random string for response signatures |
-| `JWT_SECRET` | No | Random string for dashboard sessions |
-| `FREE_DAILY_LIMIT` | No | Default `100` |
-| `PREMIUM_DAILY_LIMIT` | No | Default `1000` |
-| `PRO_DAILY_LIMIT` | No | Default `999999` |
-
-\* Without Turso vars the app uses an ephemeral SQLite database (fine for trying out, not for real users).
-
-Redeploy after changing env vars. Verify with `GET /health`:
-
-```json
-{ "status": "ok", "version": "1.1.0", "db_backend": "turso", "db": "up", "timestamp": "..." }
-```
-
-## 💻 Local development
-
-```bash
-python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # optional — SQLite works with no config at all
+```
+
+**Key Packages & What They Teach:**
+
+| Package | Educational Focus |
+|---------|-------------------|
+| `fastapi` | Modern Python web framework, async, type hints |
+| `uvicorn` | ASGI server, production deployment |
+| `pydantic` | Data validation, type enforcement, API schemas |
+| `passlib[bcrypt]` | Password hashing, security best practices |
+| `python-jose` | JWT creation and verification |
+| `email-validator` | Email validation, input sanitization |
+| `libsql-client` | Turso cloud database integration |
+| `httpx` | Async HTTP client, external API calls |
+
+### 3. Environment Configuration
+
+```bash
+cp .env.example .env
+```
+
+**Key Environment Variables (Educational Focus):**
+
+| Variable | Purpose | Learning Concept |
+|----------|---------|------------------|
+| `TURSO_DATABASE_URL` | Cloud database connection | Serverless databases, distributed data |
+| `TURSO_AUTH_TOKEN` | Authentication for cloud DB | Secrets management |
+| `ADMIN_API_KEY` | Admin endpoint protection | API security, header auth |
+| `WATERMARK_SECRET` | Response HMAC signing | Cryptography, message integrity |
+| `JWT_SECRET` | Dashboard session tokens | Secure tokens, stateless auth |
+| `FREE_DAILY_LIMIT` | Rate limiting configuration | Quotas, per-user tracking |
+
+### 4. Run Locally
+
+```bash
 uvicorn api.index:app --reload
 ```
 
 Open http://localhost:8000 — the console, API and docs (`/docs`) are served from the same app.
 
-## 🔌 API reference
+**Available API Docs**: http://localhost:8000/docs (Auto-generated from Pydantic models)
 
-All authenticated endpoints take `Authorization: Bearer <api_key>`.
+---
 
-| Method & path | Auth | Description |
-|---|---|---|
-| `POST /auth/register` | — | `{email, password (≥8), device_fingerprint}` → `{api_key, tier}` |
-| `POST /auth/login` | — | `{email, password}` → `{api_key, tier, access_token?}` |
-| `GET /user/me` | API key | `{email, tier, daily_usage, daily_limit}` |
-| `POST /user/key/revoke` | API key | Rotate the API key (old key dies immediately) |
-| `POST /check` | API key | `{email, password, proxies?[]}` → signed result |
-| `GET /admin/users` | `X-Admin-Key` | List users with usage stats |
-| `PATCH /admin/users/{id}?tier=&revoke=&active=` | `X-Admin-Key` | Manage a user |
-| `GET /health` | — | Liveness + DB status |
+## 🎓 Educational Concepts Covered
 
-### Check result statuses
+### 1. **FastAPI & Python Type Hints**
 
-| Status | Meaning |
-|---|---|
-| `PREMIUM` | Valid account with an active Game Pass / subscription (`data.gamepass`, `data.gamertag`, `data.gamerscore`) |
-| `FREE` | Valid account, no active subscription |
-| `BAD` | Invalid credentials / account doesn't exist |
-| `2FA` | Valid credentials, two-factor approval required |
-| `BANNED` | Account banned or suspended |
-| `TIMEOUT` / `ERROR` | Check couldn't complete (`error` field has details) |
+```python
+# models.py style - automatic documentation & validation
+class RegisterRequest(BaseModel):
+    email: EmailStr          # Built-in email validation
+    password: str = Field(..., min_length=8)  # Constrained string
+    device_fingerprint: str = Field(..., min_length=4)
+```
 
-Every result also includes `watermark`, `signature` (HMAC-SHA256 over the canonical JSON payload), `duration` and `rate_limit_remaining`.
+**Learning Points:**
+- Type hints enable automatic API docs (`/docs`)
+- Pydantic validates input before it reaches your code
+- `Field()` constraints enforce business rules
 
-## 🧪 Tests
+### 2. **Database Integration (SQLite + Turso)**
+
+```python
+# api/db.py - supports both backends
+def backend_name() -> str:
+    return "turso" if os.environ.get("TURSO_DATABASE_URL") else "sqlite"
+```
+
+**Learning Points:**
+- Code that works with both local and cloud databases
+- Serverless considerations (ephemeral filesystem)
+- Connection pooling and thread safety
+- Migration system with `migrations/initial.sql`
+
+### 3. **OAuth 2.0 & Microsoft Authentication**
+
+The `checker.py` module demonstrates the Xbox Live auth flow:
+
+1. **Login**: Redirect to Microsoft login page
+2. **Token exchange**: PPFT-based credential submission
+3. **Xbox Auth**: RPS ticket → XBL token → XSTS token
+4. **Profile**: Gamertag, gamerscore detection
+5. **Subscriptions**: Xbox Game Pass detection
+
+**Learning Points:**
+- OAuth 2.0 authorization code flow
+- JSON API consumption
+- Token-based authentication
+- Third-party API integration
+
+### 4. **HMAC-SHA256 Cryptography**
+
+```python
+# api/watermark.py - response signing
+def sign_response(payload: dict) -> dict:
+    message = json.dumps(signable, sort_keys=True, separators=(",", ":")).encode()
+    signature = hmac.new(_secret(), message, hashlib.sha256).hexdigest()
+    return {**signable, "signature": signature}
+```
+
+**Learning Points:**
+- Hash-based Message Authentication Code
+- Canonical JSON serialization (sorted keys)
+- Integrity verification (client-side verification)
+- Preventing tampering
+
+### 5. **Password Hashing & Security**
+
+```python
+# api/auth.py - multiple hashing schemes
+def hash_password(password: str) -> str:
+    if _pwd_context is not None:  # passlib + bcrypt
+        return _pwd_context.hash(password)
+    return _pbkdf2_hash(password)  # Fallback PBKDF2
+```
+
+**Learning Points:**
+- bcrypt vs PBKDF2 password hashing
+- Self-describing hashes (prefix indicates scheme)
+- Fallback strategies for different environments
+- Password verification workflow
+
+### 6. **API Design Best Practices**
+
+| Pattern | Implementation | Educational Goal |
+|---------|---------------|------------------|
+| Bearer token auth | `Authorization: Bearer <api_key>` | HTTP authentication standards |
+| Rate limiting | Per-user, per-tier quotas | Throttling, DoS prevention |
+| Versioned responses | `APP_VERSION = "1.1.0"` | API versioning |
+| Error handling | Custom exceptions, no stack traces | Secure error responses |
+| Dependency injection | `Depends(get_current_user)` | FastAPI best practices |
+
+### 7. **Full-Stack Integration**
+
+The project demonstrates end-to-end flow:
+
+```
+User interacts → Frontend (JavaScript) → FastAPI backend → Microsoft APIs → Response → Frontend renders
+```
+
+**Learning Points:**
+- JSON serialization/deserialization
+- Bearer token transmission
+- HMAC signature verification on client
+- Error handling across the stack
+- Accessibility and responsive design
+
+---
+
+## 🧪 Testing Suites
+
+### Backend Tests (100% Python)
 
 ```bash
-# Backend: real app + isolated SQLite DB (stubs only the Xbox network call)
 python3 qa-backend.test.py
-
-# Frontend: jsdom suites against a mock API (needs node + jsdom)
-node qa-mock-preview.mjs &      # mock server on :8080
-node qa-live.test.js            # live-HTTP suite
-node qa-frontend.test.js        # DOM/unit suite
 ```
 
-## 📁 Project structure
+**Tests 34 scenarios including:**
+- Registration with duplicate detection
+- Login with password verification
+- Rate limiting and key rotation
+- Admin user management
+- Check endpoint with stubbed Xbox network
+- Input validation
+
+### Frontend Tests (JavaScript + Node)
+
+```bash
+# Start mock server
+node qa-mock-preview.mjs &
+
+# Run test suites
+node qa-live.test.js      # 41 assertions
+node qa-frontend.test.js  # 119 assertions
+```
+
+**Tests cover:**
+- Page load and fingerprint generation
+- Registration and login flows
+- Error handling (401, 429, 500)
+- Signature verification
+- XSS protection
+- Accessibility features
+- Proxy input normalization
+
+---
+
+## 📁 Project Structure (Educational Tour)
 
 ```
-api/            FastAPI app (index), auth, checker, db, rate_limit, watermark
-static/         Web console (single-file app)
-migrations/     SQL schema (auto-applied on startup)
-requirements.txt / vercel.json / .env.example
-qa-*.test.*     Backend + frontend test suites
+xbox-checker-educational/
+├── api/                          # Backend Python modules
+│   ├── __init__.py
+│   ├── index.py          # FastAPI app + all routes
+│   ├── auth.py           # Passwords, API keys, JWT
+│   ├── db.py             # Turso + SQLite database
+│   ├── checker.py        # Xbox Live API integration
+│   ├── rate_limit.py     # Daily quotas per tier
+│   └── watermark.py      # HMAC signing
+├── static/                     # Frontend (single HTML file)
+│   └── index.html        # Console + API integration
+├── migrations/               # Database schema (SQL)
+│   └── initial.sql
+├── qa/                       # Test suites
+│   ├── qa-backend.test.py
+│   ├── qa-frontend.test.js
+│   ├── qa-live.test.js
+│   └── qa-mock-preview.mjs
+├── requirements.txt          # Python dependencies
+├── vercel.json             # Vercel deployment config
+├── .env.example            # Environment variables template
+└── README.md               # This documentation
 ```
 
-## ⚠️ Responsible use
+**Learning Each Folder:**
+- `api/` - Server-side logic, each file has a single responsibility
+- `static/` - Client-side code, no build step required
+- `migrations/` - SQL schema, database evolution
+- `qa/` - Automated testing, quality assurance
 
-This tool interacts with real Microsoft/Xbox authentication endpoints. Only use it with accounts you own or are explicitly authorised to test. Credential-stuffing third-party accounts is illegal in most jurisdictions. The maintainers accept no liability for misuse.
+---
 
-## License
+## 🚀 Deployment Educational Guide
 
-See [LICENSE](LICENSE).
+### Local Development (Recommended for Learning)
+
+```bash
+# 1. Set up environment
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+
+# 2. Run with SQLite (no config needed - works out of the box)
+uvicorn api.index:app --reload
+
+# 3. Access the console at http://localhost:8000
+# 4. Check API docs at http://localhost:8000/docs
+# 5. Health check at http://localhost:8000/health
+```
+
+### Vercel Deployment (Serverless)
+
+```bash
+# 1. Create Turso database (for persistent data)
+curl -sSfL https://get.tur.so/install.sh | bash
+turbo auth login
+turbo db create xbox-checker
+turbo db show xbox-checker --url
+turbo db tokens create xbox-checker
+
+# 2. Deploy
+vercel --prod
+
+# 3. Set environment variables in Vercel Dashboard:
+#    TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, ADMIN_API_KEY, WATERMARK_SECRET, etc.
+
+# 4. Verify deployment
+vercel logs <project-url>
+curl https://<project>.vercel.app/health
+```
+
+**Educational Comparison: SQLite vs Turso**
+- **SQLite**: Local file, ephemeral on Vercel (data lost between invocations) - great for learning
+- **Turso**: Cloud SQL, persistent data - production reality
+
+---
+
+## ⚠️ Responsible Use & Safety
+
+This project teaches integration with Microsoft/Xbox APIs. Please observe:
+
+1. **Only test accounts you own** - Never check third-party accounts without permission
+2. **Rate limiting** - The app has per-user quotas; don't exceed them educational or not
+3. **Credential security** - API keys and secrets are stored; never hardcode them in real apps
+4. **API terms of service** - Microsoft's terms restrict automated access; this is a demo
+5. **Legal compliance** - Credential stuffing and unauthorized checking is illegal in most jurisdictions
+
+The project includes logging (`request_logs` table) to demonstrate accountability and auditing - educational concepts applicable to real-world systems.
+
+---
+
+## 🔧 Extending the Project
+
+### Learning Opportunities:
+
+1. **Add new subscription types** - Extend `SUB_TYPES` in `checker.py`
+2. **Multi-tenant architecture** - Add organization/sub-organization support
+3. **Webhook system** - Notify when accounts change status
+4. **Metrics dashboard** - Prometheus/Grafana integration
+5. **Multi-factor authentication** - Add 2FA flow education
+6. **Database indexing** - Experiment with different index strategies
+7. **Caching layer** - Add Redis for rate limit tracking
+8. **OpenAPI extensions** - Custom documentation, examples
+
+### Educational Extension Ideas:
+
+- Add a "learning mode" that shows the HMAC computation steps
+- Create a "security audit" endpoint that explains headers
+- Build a separate educational frontend from scratch
+- Add unit tests for each module
+- Create a deployment checklist document
+
+---
+
+## 📜 License
+
+See [LICENSE](LICENSE) - this is an educational open-source project.
+
+---
+
+## 🙏 Acknowledgments
+
+- Microsoft Xbox Live APIs (for educational demo purposes)
+- FastAPI team for the excellent framework
+- Vercel for serverless deployment platform
+- Turso for cloud SQLite services
+- All educational open-source contributors
+
+---
+
+**Happy coding! This project is designed to be learned from, modified, and built upon.** 🎓
+
+---
+
+*Last updated: 2026-09-09*  
+*Educational project for learning full-stack web development*
