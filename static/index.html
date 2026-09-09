@@ -1,201 +1,1327 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Xbox Checker SaaS</title>
-    <style>
-        :root { --bg: #0f0f13; --card: #1a1a24; --accent: #6366f1; --text: #e4e4e7; --success: #22c55e; --error: #ef4444; }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 2rem; }
-        .container { max-width: 900px; margin: 0 auto; }
-        .card { background: var(--card); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
-        h1 { color: var(--accent); margin-bottom: 0.5rem; }
-        h2 { margin: 1rem 0 0.5rem; color: var(--accent); }
-        input, textarea, button { width: 100%; padding: 0.75rem; margin: 0.5rem 0; border-radius: 8px; border: 1px solid #333; background: #252533; color: var(--text); }
-        button { background: var(--accent); border: none; cursor: pointer; font-weight: 600; transition: opacity 0.2s; }
-        button:hover { opacity: 0.9; }
-        button.secondary { background: #333; }
-        .hidden { display: none; }
-        .status { padding: 0.5rem; border-radius: 6px; margin: 0.5rem 0; }
-        .status.success { background: rgba(34,197,94,0.15); color: var(--success); }
-        .status.error { background: rgba(239,68,68,0.15); color: var(--error); }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
-        .badge { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.875rem; background: #333; }
-        .badge.premium { background: linear-gradient(135deg, #6366f1, #a855f7); }
-        #result { white-space: pre-wrap; font-family: monospace; background: #0a0a0f; padding: 1rem; border-radius: 8px; max-height: 300px; overflow-y: auto; }
-        footer { text-align: center; padding: 2rem; color: #666; font-size: 0.875rem; }
-        .watermark { color: #6366f1; font-weight: 600; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0b12">
+<meta name="description" content="Xbox Checker SaaS demonstration console — accounts, tiers, rate limits, watermarked and signed responses.">
+<meta name="referrer" content="no-referrer">
+<title>Xbox Checker SaaS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%236366f1'/%3E%3Ctext x='16' y='23' font-size='19' text-anchor='middle' fill='white' font-family='sans-serif'%3E%F0%9F%8E%AE%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0b0b12;
+    --card: #15151f;
+    --card-2: #1c1c28;
+    --field: #23232f;
+    --border: #2c2c3d;
+    --border-strong: #3b3b52;
+    --accent: #6366f1;
+    --accent-2: #a855f7;
+    --text: #e4e4e7;
+    --muted: #9aa0ad;
+    --success: #22c55e;
+    --warn: #f59e0b;
+    --error: #ef4444;
+    --radius: 14px;
+    --space: 1rem;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--text);
+    background-color: var(--bg);
+    background-image:
+      radial-gradient(1100px 620px at 8% -12%, rgba(99,102,241,.30) 0%, transparent 58%),
+      radial-gradient(900px 520px at 102% -6%, rgba(168,85,247,.22) 0%, transparent 55%),
+      linear-gradient(180deg, #0b0b12 0%, #0e0e17 60%, #0b0b12 100%);
+    background-attachment: fixed;
+    padding: clamp(1rem, 3vw, 2.5rem);
+    padding-bottom: calc(clamp(1rem, 3vw, 2.5rem) + env(safe-area-inset-bottom, 0px));
+    overflow-x: hidden;
+  }
+
+  .container { max-width: 940px; margin: 0 auto; min-width: 0; }
+
+  /* ---------- Typography ---------- */
+  h1, h2, h3 { line-height: 1.25; margin: 0; }
+  h1 {
+    font-size: clamp(1.6rem, 5vw, 2.35rem);
+    font-weight: 800;
+    letter-spacing: -.02em;
+    background: linear-gradient(100deg, #a5b4fc, #c4b5fd 45%, #f0abfc);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  h2 { font-size: 1.15rem; color: #c7d2fe; margin-bottom: .75rem; }
+  h3 { font-size: 1rem; color: #c7d2fe; margin: 1.6rem 0 .5rem; }
+  .sub { color: var(--muted); margin: .35rem 0 1.5rem; font-size: .95rem; }
+
+  /* ---------- Cards ---------- */
+  .card {
+    background: linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,0) 55%), var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: clamp(1rem, 3vw, 1.5rem);
+    margin-bottom: 1.25rem;
+    box-shadow: 0 10px 34px rgba(0,0,0,.42);
+    min-width: 0;
+  }
+
+  /* ---------- Forms ---------- */
+  label {
+    display: block;
+    font-size: .8rem;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: .85rem 0 .3rem;
+  }
+  label:first-of-type { margin-top: 0; }
+
+  .field-row { position: relative; display: flex; align-items: stretch; gap: .4rem; }
+  .field-row input { flex: 1 1 auto; min-width: 0; }
+
+  input, textarea, select {
+    width: 100%;
+    min-width: 0;
+    padding: .7rem .8rem;
+    font-size: 16px;              /* >=16px prevents iOS Safari focus zoom */
+    font-family: inherit;
+    line-height: 1.4;
+    color: var(--text);
+    background: var(--field);
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    transition: border-color .15s, box-shadow .15s;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  textarea { resize: vertical; min-height: 92px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
+  input::placeholder, textarea::placeholder { color: #6b7280; }
+  input:focus, textarea:focus, select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(99,102,241,.28);
+  }
+  input[readonly] { color: var(--muted); background: #1b1b25; cursor: default; }
+  input[type="checkbox"] { width: auto; flex: 0 0 auto; }
+
+  .hint { font-size: .78rem; color: var(--muted); margin: .3rem 0 0; }
+  .row-inline { display: flex; align-items: center; gap: .5rem; margin-top: .6rem; font-size: .85rem; color: var(--muted); }
+  .row-inline input { margin: 0; }
+
+  /* ---------- Buttons ---------- */
+  button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .45rem;
+    width: 100%;
+    padding: .7rem 1rem;
+    margin: .5rem 0 0;
+    font-family: inherit;
+    font-size: .95rem;
+    font-weight: 650;
+    color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    border: 1px solid transparent;
+    border-radius: 9px;
+    cursor: pointer;
+    transition: filter .15s, transform .06s, opacity .15s;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.12); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  button.secondary { background: #2b2b3a; border-color: var(--border-strong); color: var(--text); }
+  button.danger { background: linear-gradient(135deg, #b91c1c, #ef4444); }
+  button.ghost { background: transparent; border-color: var(--border-strong); color: var(--muted); font-weight: 600; }
+  button.ghost:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
+  button.tiny { width: auto; padding: .32rem .6rem; margin: 0; font-size: .76rem; border-radius: 7px; }
+
+  :where(button, a, input, textarea, [tabindex]):focus-visible {
+    outline: 2px solid #a5b4fc;
+    outline-offset: 2px;
+  }
+
+  .btn-row { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .btn-row button { flex: 1 1 180px; width: auto; }
+
+  /* ---------- Tabs ---------- */
+  .tabs { display: flex; gap: .35rem; background: #101018; border: 1px solid var(--border); padding: .3rem; border-radius: 10px; margin-bottom: 1rem; }
+  .tabs button {
+    flex: 1 1 0;
+    margin: 0;
+    padding: .5rem;
+    background: transparent;
+    color: var(--muted);
+    border: none;
+    border-radius: 7px;
+    font-size: .9rem;
+  }
+  .tabs button[aria-selected="true"] { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; }
+
+  /* ---------- Status / messages ---------- */
+  .status {
+    padding: .65rem .8rem;
+    border-radius: 8px;
+    margin: .8rem 0 0;
+    font-size: .9rem;
+    border: 1px solid transparent;
+    overflow-wrap: anywhere;
+  }
+  .status:empty { display: none; }
+  .status.success { background: rgba(34,197,94,.13); border-color: rgba(34,197,94,.4); color: #86efac; }
+  .status.error   { background: rgba(239,68,68,.13); border-color: rgba(239,68,68,.42); color: #fca5a5; }
+  .status.warn    { background: rgba(245,158,11,.13); border-color: rgba(245,158,11,.4); color: #fcd34d; }
+  .status.info    { background: rgba(99,102,241,.14); border-color: rgba(99,102,241,.4); color: #c7d2fe; }
+
+  /* ---------- Dashboard ---------- */
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: .9rem; }
+  .cell { background: var(--card-2); border: 1px solid var(--border); border-radius: 10px; padding: .8rem .9rem; min-width: 0; }
+  .cell .k { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+  .cell .v { font-size: .98rem; margin-top: .3rem; overflow-wrap: anywhere; word-break: break-word; }
+
+  code, .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: .84rem;
+    overflow-wrap: anywhere;
+    word-break: break-all;
+  }
+  .key-wrap { display: flex; align-items: flex-start; gap: .5rem; margin-top: .3rem; }
+  .key-wrap code { flex: 1 1 auto; min-width: 0; }
+
+  .badge {
+    display: inline-block;
+    padding: .22rem .6rem;
+    border-radius: 999px;
+    font-size: .78rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    background: #333;
+    color: #fff;
+  }
+  .badge.free    { background: #334155; color: #e2e8f0; }
+  .badge.premium { background: linear-gradient(135deg, #6366f1, #a855f7); }
+  .badge.pro     { background: linear-gradient(135deg, #f59e0b, #ef4444); }
+  .badge.unknown { background: #3f3f46; color: #d4d4d8; }
+
+  .meter { height: 8px; background: #2a2a3a; border-radius: 999px; overflow: hidden; margin-top: .5rem; }
+  .meter > span { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #22c55e, #f59e0b 70%, #ef4444); transition: width .4s ease; }
+
+  .confirm-box { margin-top: .7rem; padding: .8rem; border: 1px dashed rgba(239,68,68,.55); border-radius: 10px; background: rgba(239,68,68,.08); }
+  .confirm-box p { margin: 0 0 .5rem; font-size: .88rem; color: #fecaca; }
+
+  /* ---------- Results ---------- */
+  .result { margin-top: 1rem; }
+  .result:empty { display: none; }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: .3rem .9rem; font-size: .9rem; margin-bottom: .8rem; min-width: 0; }
+  .kv dt { color: var(--muted); font-weight: 600; }
+  .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+  pre {
+    background: #08080d;
+    border: 1px solid var(--border);
+    border-radius: 9px;
+    padding: .85rem;
+    margin: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .8rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    max-height: 340px;
+    overflow-y: auto;
+  }
+
+  .pill { display: inline-flex; align-items: center; gap: .35rem; padding: .18rem .55rem; border-radius: 999px; font-size: .8rem; font-weight: 700; }
+  .pill.ok   { background: rgba(34,197,94,.16); color: #86efac; border: 1px solid rgba(34,197,94,.45); }
+  .pill.bad  { background: rgba(239,68,68,.16); color: #fca5a5; border: 1px solid rgba(239,68,68,.45); }
+  .pill.na   { background: rgba(148,163,184,.16); color: #cbd5e1; border: 1px solid rgba(148,163,184,.4); }
+
+  /* ---------- Admin table ---------- */
+  .table-scroll { overflow-x: auto; margin-top: .8rem; border: 1px solid var(--border); border-radius: 10px; -webkit-overflow-scrolling: touch; }
+  table { border-collapse: collapse; width: 100%; font-size: .84rem; }
+  caption { text-align: left; padding: .6rem .8rem; color: var(--muted); font-size: .82rem; }
+  th, td { padding: .55rem .7rem; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  thead th { background: #101018; position: sticky; top: 0; font-size: .74rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: rgba(99,102,241,.07); }
+  td.email { white-space: normal; overflow-wrap: anywhere; }
+
+  /* ---------- Spinner ---------- */
+  .spin { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: sp .7s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+
+  /* ---------- Misc ---------- */
+  .hidden { display: none !important; }
+  .divider { height: 1px; background: var(--border); margin: 1.4rem 0; border: 0; }
+  .watermark { color: #a5b4fc; font-weight: 700; }
+  footer { text-align: center; padding: 1.6rem .5rem 1rem; color: #6b7280; font-size: .85rem; }
+  footer a { color: #6b7280; }
+  .admin-trigger { background: none; border: none; padding: 0; margin: 0; width: auto; color: #565b66; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: underline dotted; }
+  .admin-trigger:hover { color: #a5b4fc; }
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .noscript { background: rgba(239,68,68,.14); border: 1px solid rgba(239,68,68,.45); color: #fca5a5; padding: .8rem 1rem; border-radius: 10px; margin-bottom: 1rem; }
+
+  /* ---------- Toasts ---------- */
+  #toasts { position: fixed; right: 1rem; bottom: 1rem; display: flex; flex-direction: column; gap: .5rem; z-index: 50; max-width: min(92vw, 340px); }
+  .toast { background: #1f1f2c; border: 1px solid var(--border-strong); border-left: 3px solid var(--accent); border-radius: 9px; padding: .6rem .8rem; font-size: .85rem; box-shadow: 0 8px 24px rgba(0,0,0,.5); animation: rise .18s ease-out; overflow-wrap: anywhere; }
+  .toast.success { border-left-color: var(--success); }
+  .toast.error { border-left-color: var(--error); }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+
+  /* ---------- Responsive ---------- */
+  @media (max-width: 640px) {
+    .grid { grid-template-columns: 1fr; }
+    .kv { grid-template-columns: 1fr; gap: .15rem; }
+    .kv dt { margin-top: .5rem; }
+    .btn-row button { flex: 1 1 100%; }
+    pre { max-height: 260px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  }
+</style>
 </head>
 <body>
 <div class="container">
+
+  <header>
     <h1>🎮 Xbox Checker SaaS</h1>
-    
-    <!-- Auth Section -->
-    <div id="auth-section" class="card">
-        <h2>Get Started</h2>
-        <div id="register-form">
-            <input type="email" id="reg-email" placeholder="Email">
-            <input type="password" id="reg-pass" placeholder="Password (min 8 chars)">
-            <input type="text" id="reg-fp" placeholder="Device Fingerprint" readonly>
-            <button onclick="register()">Register</button>
-        </div>
-        <div id="login-form" class="hidden">
-            <input type="email" id="login-email" placeholder="Email">
-            <input type="password" id="login-pass" placeholder="Password">
-            <button onclick="login()">Login</button>
-            <button class="secondary" onclick="showRegister()">Create Account</button>
-        </div>
-        <div id="auth-msg"></div>
+    <p class="sub">Demonstration console — register, manage your API key, and run watermarked, signed checks.</p>
+  </header>
+
+  <noscript>
+    <div class="noscript"><strong>JavaScript is required.</strong> This console needs JavaScript enabled to authenticate and run checks.</div>
+  </noscript>
+
+  <!-- ============ AUTH ============ -->
+  <section id="auth-section" class="card" aria-labelledby="auth-heading">
+    <h2 id="auth-heading">Get Started</h2>
+
+    <div class="tabs" role="tablist" aria-label="Authentication mode">
+      <button type="button" id="tab-register" role="tab" aria-selected="true" aria-controls="register-form">Register</button>
+      <button type="button" id="tab-login" role="tab" aria-selected="false" aria-controls="login-form">Login</button>
     </div>
 
-    <!-- Dashboard -->
-    <div id="dashboard" class="card hidden">
-        <h2>Dashboard</h2>
-        <div class="grid">
-            <div><strong>API Key:</strong><br><code id="api-key"></code></div>
-            <div><strong>Tier:</strong><br><span id="tier-badge" class="badge"></span></div>
-            <div><strong>Usage:</strong><br><span id="usage"></span></div>
+    <form id="register-form" novalidate>
+      <label for="reg-email">Email</label>
+      <input type="email" id="reg-email" name="email" placeholder="you@example.com" autocomplete="email" inputmode="email" required>
+
+      <label for="reg-pass">Password <span class="hint" style="text-transform:none;letter-spacing:0">(min 8 characters)</span></label>
+      <input type="password" id="reg-pass" name="password" placeholder="At least 8 characters" autocomplete="new-password" minlength="8" required>
+
+      <label for="reg-fp">Device Fingerprint <span class="hint" style="text-transform:none;letter-spacing:0">(auto-generated)</span></label>
+      <div class="field-row">
+        <input type="text" id="reg-fp" name="device_fingerprint" readonly aria-describedby="fp-hint">
+        <button type="button" class="secondary tiny" id="fp-refresh" title="Regenerate fingerprint">↻</button>
+      </div>
+      <p class="hint" id="fp-hint">Canvas + screen + user-agent hash. One account per device.</p>
+
+      <button type="submit" id="btn-register">Create Account</button>
+    </form>
+
+    <form id="login-form" class="hidden" novalidate>
+      <label for="login-email">Email</label>
+      <input type="email" id="login-email" name="email" placeholder="you@example.com" autocomplete="email" inputmode="email" required>
+
+      <label for="login-pass">Password</label>
+      <input type="password" id="login-pass" name="password" placeholder="Your password" autocomplete="current-password" required>
+
+      <button type="submit" id="btn-login">Login</button>
+    </form>
+
+    <div id="auth-msg" role="status" aria-live="polite"></div>
+  </section>
+
+  <!-- ============ DASHBOARD ============ -->
+  <section id="dashboard" class="card hidden" aria-labelledby="dash-heading">
+    <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between">
+      <h2 id="dash-heading" style="margin:0">Dashboard</h2>
+      <button type="button" class="ghost tiny" id="btn-logout">Sign out</button>
+    </div>
+
+    <div id="dash-msg" role="status" aria-live="polite"></div>
+
+    <div class="grid" style="margin-top:1rem">
+      <div class="cell" style="grid-column:1/-1">
+        <div class="k">API Key</div>
+        <div class="key-wrap">
+          <code id="api-key">—</code>
+          <button type="button" class="secondary tiny" id="btn-copy-key">Copy</button>
         </div>
-        <button class="secondary" onclick="revokeKey()">🔄 Regenerate API Key</button>
-        
-        <h3 style="margin:1.5rem 0 0.5rem">Test Check</h3>
-        <input type="text" id="check-email" placeholder="Email">
-        <input type="password" id="check-pass" placeholder="Password">
-        <textarea id="check-proxies" placeholder="Proxies (one per line, optional)&#10;http://user:pass@host:port&#10;socks5://host:port"></textarea>
-        <button onclick="runCheck()">🔍 Run Check</button>
-        <div id="result"></div>
+      </div>
+
+      <div class="cell">
+        <div class="k">Tier</div>
+        <div class="v"><span id="tier-badge" class="badge unknown">—</span></div>
+      </div>
+
+      <div class="cell">
+        <div class="k">Usage today</div>
+        <div class="v"><span id="usage">—</span></div>
+        <div class="meter" aria-hidden="true"><span id="usage-bar"></span></div>
+      </div>
     </div>
 
-    <!-- Admin (if key provided) -->
-    <div id="admin-section" class="card hidden">
-        <h2>🔐 Admin Panel</h2>
-        <input type="password" id="admin-key" placeholder="Admin API Key">
-        <button onclick="loadAdmin()">Load Users</button>
-        <pre id="admin-output"></pre>
+    <div class="btn-row" style="margin-top:1rem">
+      <button type="button" class="secondary" id="btn-revoke">🔄 Regenerate API Key</button>
+      <button type="button" class="ghost" id="btn-refresh">↻ Refresh</button>
     </div>
 
-    <footer>
-        <span class="watermark">Provided by @yorichiiprime</span> • All checks logged • Use responsibly
-    </footer>
+    <div id="revoke-confirm" class="confirm-box hidden" role="alertdialog" aria-labelledby="revoke-title">
+      <p id="revoke-title">Regenerate your API key? Your <strong>current key stops working immediately</strong> and anything using it will break.</p>
+      <div class="btn-row">
+        <button type="button" class="danger" id="btn-revoke-yes">Yes, regenerate</button>
+        <button type="button" class="secondary" id="btn-revoke-no">Cancel</button>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    <h3>Test Check</h3>
+
+    <form id="check-form" novalidate>
+      <label for="check-email">Account Email</label>
+      <input type="text" id="check-email" placeholder="account@example.com" autocomplete="off" spellcheck="false" required>
+
+      <label for="check-pass">Account Password</label>
+      <div class="field-row">
+        <input type="password" id="check-pass" placeholder="Account password" autocomplete="off" required>
+        <button type="button" class="secondary tiny" id="btn-eye" aria-label="Show password">👁</button>
+      </div>
+
+      <label for="check-proxies">Proxies <span class="hint" style="text-transform:none;letter-spacing:0">(one per line, optional)</span></label>
+      <textarea id="check-proxies" rows="4" placeholder="http://user:pass@host:port&#10;socks5://host:port"></textarea>
+      <p class="hint" id="proxy-count">0 proxies queued</p>
+
+      <button type="submit" id="btn-check">🔍 Run Check</button>
+    </form>
+
+    <div id="result" class="result" role="status" aria-live="polite"></div>
+  </section>
+
+  <!-- ============ ADMIN (hidden until unlocked) ============ -->
+  <section id="admin-section" class="card hidden" aria-labelledby="admin-heading">
+    <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between">
+      <h2 id="admin-heading" style="margin:0">🔐 Admin Panel</h2>
+      <button type="button" class="ghost tiny" id="btn-admin-close">Hide</button>
+    </div>
+
+    <form id="admin-form" novalidate>
+      <label for="admin-key">Admin API Key</label>
+      <input type="password" id="admin-key" placeholder="X-Admin-Key" autocomplete="off">
+      <button type="submit" id="btn-admin">Load Users</button>
+    </form>
+
+    <div id="admin-msg" role="status" aria-live="polite"></div>
+    <div id="admin-output" class="result"></div>
+  </section>
+
+  <footer>
+    <span class="watermark">Provided by @yorichiiprime</span> · All checks logged · Use responsibly<br>
+    <button type="button" class="admin-trigger" id="admin-trigger">Admin</button>
+    <span class="hint" style="display:inline"> · Ctrl/⌘ + Shift + A</span>
+  </footer>
 </div>
 
+<div id="toasts" aria-live="polite"></div>
+
 <script>
-// Device fingerprint (simple canvas + navigator hash)
-function getFingerprint() {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    ctx.textBaseline = 'top';
-    ctx.font = '14px Arial';
-    ctx.fillText('fingerprint', 2, 2);
-    const hash = [...canvas.toDataURL()].reduce((a,c)=>a+c.charCodeAt(0),0);
-    return `${navigator.userAgent}${screen.width}${screen.height}${hash}`.split('').reduce((a,c)=>((a<<5)-a+c.charCodeAt(0))|0,0).toString(16);
-}
-document.getElementById('reg-fp').value = getFingerprint();
+(function () {
+  'use strict';
 
-// Auth state
-let apiKey = localStorage.getItem('xbsp_api_key');
-if (apiKey) {
-    document.getElementById('auth-section').classList.add('hidden');
-    document.getElementById('dashboard').classList.remove('hidden');
+  /* =========================================================
+     Configuration (frontend only)
+     ========================================================= */
+  var API_BASE = '';                       // same-origin; set an absolute origin if the UI is hosted separately
+  var STORAGE_KEY = 'xbsp_api_key';
+  var EXPECTED_WATERMARK = 'Provided by @yorichiiprime';
+  var REQUEST_TIMEOUT_MS = 60000;
+
+  // Browser-side HMAC secret. NOTE: anything shipped inside the page is public,
+  // so a passing check proves the response shape is consistent — it is NOT proof
+  // of authenticity. Treat it as an integrity/plumbing assertion only.
+  var HMAC_SECRET = 'dev-secret-change-in-prod';
+
+  /* =========================================================
+     Small utilities
+     ========================================================= */
+  var $ = function (id) { return document.getElementById(id); };
+
+  function el(tag, props, children) {
+    var node = document.createElement(tag);
+    props = props || {};
+    Object.keys(props).forEach(function (k) {
+      var v = props[k];
+      if (v === null || v === undefined || v === false) return;
+      if (k === 'class') node.className = v;
+      else if (k === 'text') node.textContent = String(v);
+      else if (k === 'dataset') { Object.keys(v).forEach(function (d) { node.dataset[d] = v[d]; }); }
+      else if (k.indexOf('on') === 0 && typeof v === 'function') node.addEventListener(k.slice(2).toLowerCase(), v);
+      else node.setAttribute(k, v === true ? '' : String(v));
+    });
+    (Array.isArray(children) ? children : [children]).forEach(function (c) {
+      if (c === null || c === undefined || c === false) return;
+      node.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
+    });
+    return node;
+  }
+
+  function clear(node) { while (node && node.firstChild) node.removeChild(node.firstChild); }
+
+  // Every server-provided string is rendered through textContent (see el()),
+  // so no response body can inject markup.
+  function setMsg(host, kind, text) {
+    if (!host) return;
+    clear(host);
+    if (!text) return;
+    host.appendChild(el('div', { class: 'status ' + kind, text: text }));
+  }
+
+  function toast(text, kind) {
+    var host = $('toasts');
+    if (!host) return;
+    var t = el('div', { class: 'toast ' + (kind || ''), text: text });
+    host.appendChild(t);
+    setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 3200);
+  }
+
+  function setBusy(btn, busy, busyLabel) {
+    if (!btn) return;
+    if (busy) {
+      btn.dataset.label = btn.textContent;
+      btn.disabled = true;
+      clear(btn);
+      btn.appendChild(el('span', { class: 'spin', 'aria-hidden': 'true' }));
+      btn.appendChild(document.createTextNode(busyLabel || 'Working…'));
+    } else {
+      btn.disabled = false;
+      clear(btn);
+      btn.appendChild(document.createTextNode(btn.dataset.label || 'Submit'));
+    }
+  }
+
+  function validEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v || '').trim()); }
+
+  /* Safe storage wrappers — private modes / disabled storage must not break the page. */
+  function storeGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
+  function storeSet(k, v) { try { window.localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+  function storeDel(k) { try { window.localStorage.removeItem(k); } catch (e) {} }
+
+  /* =========================================================
+     API client with full error handling
+     ========================================================= */
+  function ApiError(message, status, detail) {
+    this.name = 'ApiError';
+    this.message = message;
+    this.status = status;
+    this.detail = detail;
+  }
+  ApiError.prototype = Object.create(Error.prototype);
+
+  function detailOf(data) {
+    if (!data || typeof data !== 'object') return null;
+    return data.detail || data.message || data.error || null;
+  }
+
+  function friendlyStatus(status, data) {
+    var d = detailOf(data);
+    if (d) return typeof d === 'string' ? d : JSON.stringify(d);
+    switch (status) {
+      case 400: return 'The request was rejected as invalid. Check the fields and try again.';
+      case 401: return 'Not authorised — your credentials or API key are not valid.';
+      case 403: return 'Forbidden — this account is not allowed to perform that action.';
+      case 404: return 'Not found — that endpoint or resource does not exist.';
+      case 409: return 'Conflict — that resource already exists (an account for this email or device may already be registered).';
+      case 413: return 'Request too large — reduce the number of proxies and try again.';
+      case 422: return 'Validation failed — one or more fields are in the wrong format.';
+      case 429: return 'Rate limit reached. Wait a moment before trying again.';
+      case 500: return 'Server error (500). Please try again shortly.';
+      case 502: return 'Bad gateway (502). The service is temporarily unavailable.';
+      case 503: return 'Service unavailable (503). Please try again shortly.';
+      case 504: return 'Gateway timeout (504). The service took too long to respond.';
+      default:  return 'Unexpected response from the server (HTTP ' + status + ').';
+    }
+  }
+
+  async function api(endpoint, opts) {
+    opts = opts || {};
+    var method = opts.method || 'GET';
+    var body = (opts.body === undefined) ? null : opts.body;
+    var useAuth = opts.auth !== false;
+
+    var headers = { 'Accept': 'application/json' };
+    if (body !== null) headers['Content-Type'] = 'application/json';
+    if (useAuth && state.apiKey) headers['Authorization'] = 'Bearer ' + state.apiKey;
+
+    var ctrl = ('AbortController' in window) ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, REQUEST_TIMEOUT_MS) : null;
+
+    var res;
+    try {
+      res = await fetch(API_BASE + endpoint, {
+        method: method,
+        headers: headers,
+        body: body !== null ? JSON.stringify(body) : null,
+        signal: ctrl ? ctrl.signal : undefined,
+        credentials: 'same-origin'
+      });
+    } catch (err) {
+      if (timer) clearTimeout(timer);
+      if (err && err.name === 'AbortError') {
+        throw new ApiError('The request timed out after ' + Math.round(REQUEST_TIMEOUT_MS / 1000) + 's. Please try again.', 0, 'timeout');
+      }
+      throw new ApiError('Network error — could not reach the server. Check your connection and try again.', 0, 'network');
+    }
+    if (timer) clearTimeout(timer);
+
+    var raw = '';
+    try { raw = await res.text(); } catch (e) { raw = ''; }
+
+    var data = null;
+    if (raw) {
+      try { data = JSON.parse(raw); }
+      catch (e) { data = { detail: raw.slice(0, 400) }; }
+    }
+
+    if (!res.ok) {
+      if (res.status === 401 && useAuth && state.apiKey) handleUnauthorized();
+      throw new ApiError(friendlyStatus(res.status, data), res.status, detailOf(data));
+    }
+    if (data === null) throw new ApiError('The server returned an empty response.', res.status, null);
+    return data;
+  }
+
+  /* =========================================================
+     State + session
+     ========================================================= */
+  var state = { apiKey: null, tier: null };
+
+  function showDashboard(on) {
+    $('dashboard').classList.toggle('hidden', !on);
+    $('auth-section').classList.toggle('hidden', on);
+  }
+
+  function signOut(message, kind) {
+    state.apiKey = null;
+    state.tier = null;
+    storeDel(STORAGE_KEY);
+    showDashboard(false);
+    selectTab('login');
+    setMsg($('auth-msg'), kind || 'info', message || 'Signed out.');
+  }
+
+  function handleUnauthorized() {
+    if (!state.apiKey) return;
+    state.apiKey = null;
+    storeDel(STORAGE_KEY);
+    showDashboard(false);
+    selectTab('login');
+    setMsg($('auth-msg'), 'error', 'Your session is no longer valid (the API key was rejected). Please log in again.');
+  }
+
+  function enterDashboard() {
+    setMsg($('auth-msg'), '', '');
+    showDashboard(true);
     loadProfile();
-}
+  }
 
-function showRegister() {
-    document.getElementById('register-form').classList.remove('hidden');
-    document.getElementById('login-form').classList.add('hidden');
-}
+  function selectTab(which) {
+    var reg = which === 'register';
+    $('register-form').classList.toggle('hidden', !reg);
+    $('login-form').classList.toggle('hidden', reg);
+    $('tab-register').setAttribute('aria-selected', reg ? 'true' : 'false');
+    $('tab-login').setAttribute('aria-selected', reg ? 'false' : 'true');
+  }
 
-async function api(endpoint, method='GET', body=null) {
-    const headers = { 'Content-Type': 'application/json' };
-    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
-    const res = await fetch(endpoint, { method, headers, body: body ? JSON.stringify(body) : null });
-    return res.json();
-}
-
-async function register() {
-    const email = document.getElementById('reg-email').value;
-    const password = document.getElementById('reg-pass').value;
-    const fp = document.getElementById('reg-fp').value;
-    const msg = document.getElementById('auth-msg');
-    
-    const data = await api('/auth/register', 'POST', { email, password, device_fingerprint: fp });
-    if (data.api_key) {
-        localStorage.setItem('xbsp_api_key', data.api_key);
-        apiKey = data.api_key;
-        document.getElementById('auth-section').classList.add('hidden');
-        document.getElementById('dashboard').classList.remove('hidden');
-        loadProfile();
-    } else {
-        msg.innerHTML = `<div class="status error">${data.detail || 'Registration failed'}</div>`;
+  /* =========================================================
+     Device fingerprint — canvas + screen + user agent
+     ========================================================= */
+  function fnv1a(str, seed) {
+    var h = (seed === undefined ? 0x811c9dc5 : seed) >>> 0;
+    for (var i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      // h *= 16777619, kept in 32-bit range
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
     }
-}
+    return h >>> 0;
+  }
+  function toHex32(n) { return ('00000000' + (n >>> 0).toString(16)).slice(-8); }
 
-async function login() {
-    const email = document.getElementById('login-email').value;
-    const password = document.getElementById('login-pass').value;
-    const msg = document.getElementById('auth-msg');
-    
-    const data = await api('/auth/login', 'POST', { email, password });
-    if (data.access_token) {
-        localStorage.setItem('xbsp_api_key', data.api_key);
-        apiKey = data.api_key;
-        document.getElementById('auth-section').classList.add('hidden');
-        document.getElementById('dashboard').classList.remove('hidden');
-        loadProfile();
-    } else {
-        msg.innerHTML = `<div class="status error">${data.detail || 'Login failed'}</div>`;
+  function canvasSignal() {
+    try {
+      var c = document.createElement('canvas');
+      c.width = 220; c.height = 32;
+      var ctx = c.getContext ? c.getContext('2d') : null;
+      if (!ctx || typeof c.toDataURL !== 'function') return '';
+      ctx.textBaseline = 'top';
+      var g = ctx.createLinearGradient(0, 0, 220, 0);
+      g.addColorStop(0, '#f60'); g.addColorStop(0.5, '#069'); g.addColorStop(1, '#0f6');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 220, 32);
+      ctx.fillStyle = 'rgba(255,255,255,0.72)';
+      ctx.font = '15px "Arial", sans-serif';
+      ctx.fillText('XboxChecker\u00A9\u{1F512}', 3, 9);
+      ctx.strokeStyle = 'rgba(120,186,176,0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(64, 16, 24, 0, Math.PI * 2, true); ctx.stroke();
+      ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = 'rgb(255,0,255)';
+      ctx.fillRect(90, 4, 40, 24);
+      return c.toDataURL();
+    } catch (e) {
+      return '';
     }
-}
+  }
 
-async function loadProfile() {
-    const data = await api('/user/me');
-    document.getElementById('api-key').textContent = apiKey;
-    document.getElementById('tier-badge').textContent = data.tier.toUpperCase();
-    document.getElementById('tier-badge').className = `badge ${data.tier}`;
-    document.getElementById('usage').textContent = `${data.daily_usage}/${data.daily_limit} checks today`;
-}
+  function userAgentString() {
+    try {
+      if (navigator.userAgentData && navigator.userAgentData.brands && navigator.userAgentData.brands.length) {
+        return navigator.userAgentData.brands.map(function (b) { return b.brand + '/' + b.version; }).join(';')
+             + '|' + (navigator.userAgentData.platform || '');
+      }
+    } catch (e) {}
+    return navigator.userAgent || 'unknown-agent';
+  }
 
-async function revokeKey() {
-    if (!confirm('Regenerate API key? Old key will stop working.')) return;
-    const data = await api('/user/key/revoke', 'POST');
-    if (data.api_key) {
-        localStorage.setItem('xbsp_api_key', data.api_key);
-        apiKey = data.api_key;
-        loadProfile();
-        alert('New API key generated!');
+  function computeFingerprint() {
+    var parts = [];
+    try {
+      parts.push(canvasSignal());
+      parts.push(userAgentString());
+      parts.push((screen && screen.width) || 0, (screen && screen.height) || 0, (screen && screen.colorDepth) || 0);
+      parts.push(window.devicePixelRatio || 1);
+      parts.push((navigator && navigator.language) || '');
+      parts.push((navigator && navigator.languages) ? navigator.languages.join(',') : '');
+      parts.push((navigator && navigator.platform) || '');
+      parts.push((navigator && navigator.hardwareConcurrency) || 0);
+      parts.push((navigator && navigator.maxTouchPoints) || 0);
+      try { parts.push(Intl.DateTimeFormat().resolvedOptions().timeZone || ''); } catch (e) {}
+    } catch (e) { /* every signal is optional */ }
+
+    var joined = parts.join('~');
+    var fp = toHex32(fnv1a(joined, 0x811c9dc5)) + toHex32(fnv1a(joined, 0x01000193));
+
+    // Guarantee a stable, non-empty value even if every signal above failed.
+    if (!fp || fp === '0000000000000000') {
+      fp = storeGet('xbsp_fp_fallback');
+      if (!fp) {
+        var rnd = '';
+        if (window.crypto && crypto.getRandomValues) {
+          var a = new Uint32Array(2); crypto.getRandomValues(a);
+          rnd = toHex32(a[0]) + toHex32(a[1]);
+        } else {
+          rnd = toHex32(Math.floor(Math.random() * 4294967295)) + toHex32(Math.floor(Math.random() * 4294967295));
+        }
+        fp = rnd;
+        storeSet('xbsp_fp_fallback', fp);
+      }
     }
-}
+    return fp;
+  }
 
-async function runCheck() {
-    const email = document.getElementById('check-email').value;
-    const password = document.getElementById('check-pass').value;
-    const proxies = document.getElementById('check-proxies').value.trim().split('\n').filter(p=>p);
-    const resultDiv = document.getElementById('result');
-    
-    resultDiv.textContent = 'Checking...';
-    const data = await api('/check', 'POST', { email, password, proxies });
-    
-    // Verify signature client-side (optional)
-    const { signature, watermark, ...payload } = data;
-    const signable = JSON.stringify({ ...payload, watermark }, Object.keys(payload).sort());
-    const encoder = new TextEncoder();
-    const keyData = encoder.encode('dev-secret-change-in-prod'); // Should match server
-    const msgData = encoder.encode(signable);
-    const key = await crypto.subtle.importKey('raw', keyData, {name:'HMAC',hash:'SHA-256'}, false, ['verify']);
-    const sigBytes = Uint8Array.from(signature.match(/.{1,2}/g).map(b=>parseInt(b,16)));
-    const valid = await crypto.subtle.verify('HMAC', key, sigBytes, msgData);
-    
-    resultDiv.innerHTML = `<strong>Status:</strong> ${data.status}<br><strong>Watermark:</strong> <span class="watermark">${data.watermark}</span><br><strong>Signature Valid:</strong> ${valid ? '✅' : '❌'}<br><br><pre>${JSON.stringify(payload, null, 2)}</pre>`;
-}
+  function refreshFingerprint() {
+    var fp = computeFingerprint();
+    var input = $('reg-fp');
+    if (input) input.value = fp;
+    return fp;
+  }
 
-async function loadAdmin() {
-    const adminKey = document.getElementById('admin-key').value;
-    const res = await fetch('/admin/users', { headers: { 'X-Admin-Key': adminKey } });
-    const data = await res.json();
-    document.getElementById('admin-output').textContent = JSON.stringify(data, null, 2);
-}
+  /* =========================================================
+     Clipboard
+     ========================================================= */
+  async function copyText(text) {
+    if (!text) return false;
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return true;
+      }
+    } catch (e) { /* fall through to legacy path */ }
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:-1000px;opacity:0';
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) { return false; }
+  }
+
+  /* =========================================================
+     Canonical JSON + HMAC signature verification
+     ========================================================= */
+
+  // Deterministic serialisation: object keys sorted recursively, compact separators.
+  function canonicalJson(value) {
+    if (value === undefined) return 'null';
+    if (value === null) return 'null';
+    var t = typeof value;
+    if (t === 'number' || t === 'boolean') return JSON.stringify(value);
+    if (t === 'string') return JSON.stringify(value);
+    if (t === 'bigint') return JSON.stringify(String(value));
+    if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
+    if (t === 'object') {
+      return '{' + Object.keys(value).sort().map(function (k) {
+        return JSON.stringify(k) + ':' + canonicalJson(value[k]);
+      }).join(',') + '}';
+    }
+    return 'null';
+  }
+
+  function parseSignature(sig) {
+    var s = String(sig || '').trim();
+    if (!s) return null;
+    if (/^[0-9a-fA-F]+$/.test(s) && s.length % 2 === 0) {
+      var out = new Uint8Array(s.length / 2);
+      for (var i = 0; i < out.length; i++) out[i] = parseInt(s.substr(i * 2, 2), 16);
+      return out;
+    }
+    try {
+      var bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+      var b = new Uint8Array(bin.length);
+      for (var j = 0; j < bin.length; j++) b[j] = bin.charCodeAt(j);
+      return b;
+    } catch (e) { return null; }
+  }
+
+  async function verifySignature(response) {
+    var signature = response && response.signature;
+    if (!signature || typeof signature !== 'string') {
+      return { state: 'na', label: 'No signature returned', detail: 'The response did not include a signature field.' };
+    }
+    if (!(window.crypto && window.crypto.subtle && window.isSecureContext)) {
+      return {
+        state: 'na',
+        label: 'Cannot verify here',
+        detail: 'Web Crypto (crypto.subtle) needs a secure context — open this page over HTTPS or http://localhost.'
+      };
+    }
+
+    var rest = {};
+    Object.keys(response).forEach(function (k) { if (k !== 'signature') rest[k] = response[k]; });
+    var watermark = (typeof rest.watermark === 'string' && rest.watermark) ? rest.watermark : EXPECTED_WATERMARK;
+
+    var sigBytes = parseSignature(signature);
+    if (!sigBytes) {
+      return { state: 'na', label: 'Unreadable signature', detail: 'The signature was not valid hex or base64.' };
+    }
+
+    var candidates = [
+      { label: 'sorted-keys JSON of payload + watermark', text: canonicalJson(Object.assign({}, rest, { watermark: watermark })) },
+      { label: 'sorted-keys JSON of payload only',        text: canonicalJson(rest) },
+      { label: 'insertion-order JSON of payload + watermark', text: JSON.stringify(Object.assign({}, rest, { watermark: watermark })) }
+    ];
+
+    try {
+      var enc = new TextEncoder();
+      var key = await crypto.subtle.importKey(
+        'raw', enc.encode(HMAC_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
+      );
+      for (var i = 0; i < candidates.length; i++) {
+        var ok = await crypto.subtle.verify('HMAC', key, sigBytes, enc.encode(candidates[i].text));
+        if (ok) return { state: 'valid', label: 'Signature valid', detail: 'Matched canonical form: ' + candidates[i].label };
+      }
+    } catch (e) {
+      return { state: 'na', label: 'Verification failed', detail: (e && e.message) ? e.message : 'Web Crypto error.' };
+    }
+
+    return {
+      state: 'invalid',
+      label: 'Signature mismatch',
+      detail: 'The HMAC did not match any expected canonical form — the payload may have been altered, or the shared secret differs.'
+    };
+  }
+
+  function sigPill(v) {
+    var cls = v.state === 'valid' ? 'ok' : (v.state === 'invalid' ? 'bad' : 'na');
+    var icon = v.state === 'valid' ? '✅' : (v.state === 'invalid' ? '❌' : '⚪');
+    var pill = el('span', { class: 'pill ' + cls }, [icon + ' ' + v.label]);
+    var wrap = el('span', {}, [pill]);
+    if (v.detail) {
+      wrap.appendChild(document.createTextNode(' '));
+      wrap.appendChild(el('span', { class: 'hint', text: v.detail }));
+    }
+    return wrap;
+  }
+
+  /* =========================================================
+     Auth flows
+     ========================================================= */
+  async function register(ev) {
+    ev.preventDefault();
+    var btn = $('btn-register');
+    var msg = $('auth-msg');
+    var email = $('reg-email').value.trim();
+    var password = $('reg-pass').value;
+    var fp = $('reg-fp').value.trim() || refreshFingerprint();
+
+    if (!validEmail(email)) { setMsg(msg, 'error', 'Please enter a valid email address.'); $('reg-email').focus(); return; }
+    if (!password || password.length < 8) { setMsg(msg, 'error', 'Password must be at least 8 characters.'); $('reg-pass').focus(); return; }
+    if (!fp) { setMsg(msg, 'error', 'Could not generate a device fingerprint. Please reload the page.'); return; }
+
+    setBusy(btn, true, 'Creating account…');
+    setMsg(msg, '', '');
+    try {
+      var data = await api('/auth/register', {
+        method: 'POST',
+        auth: false,
+        body: { email: email, password: password, device_fingerprint: fp }
+      });
+      var key = data.api_key || data.access_token || data.key;
+      if (!key) throw new ApiError('Registration succeeded but no API key was returned.', 200, null);
+      if (!storeSet(STORAGE_KEY, key)) {
+        setMsg(msg, 'warn', 'Account created, but this browser blocked local storage — you will need to log in again on your next visit.');
+      }
+      state.apiKey = key;
+      setMsg(msg, 'success', 'Account created. Welcome!');
+      enterDashboard();
+    } catch (err) {
+      setMsg(msg, 'error', err.message || 'Registration failed.');
+    } finally {
+      setBusy(btn, false);
+    }
+  }
+
+  async function login(ev) {
+    ev.preventDefault();
+    var btn = $('btn-login');
+    var msg = $('auth-msg');
+    var email = $('login-email').value.trim();
+    var password = $('login-pass').value;
+
+    if (!validEmail(email)) { setMsg(msg, 'error', 'Please enter a valid email address.'); $('login-email').focus(); return; }
+    if (!password) { setMsg(msg, 'error', 'Please enter your password.'); $('login-pass').focus(); return; }
+
+    setBusy(btn, true, 'Signing in…');
+    setMsg(msg, '', '');
+    try {
+      var data = await api('/auth/login', { method: 'POST', auth: false, body: { email: email, password: password } });
+      // The dashboard is keyed on the API key; accept either field name defensively.
+      var key = data.api_key || data.access_token || data.key;
+      if (!key) throw new ApiError('Login succeeded but no API key was returned.', 200, null);
+      storeSet(STORAGE_KEY, key);
+      state.apiKey = key;
+      if (data.tier) state.tier = data.tier;
+      $('login-pass').value = '';
+      setMsg(msg, 'success', 'Welcome back!');
+      enterDashboard();
+    } catch (err) {
+      setMsg(msg, 'error', err.message || 'Login failed.');
+    } finally {
+      setBusy(btn, false);
+    }
+  }
+
+  /* =========================================================
+     Profile / dashboard
+     ========================================================= */
+  async function loadProfile(opts) {
+    opts = opts || {};
+    if (!state.apiKey) return;
+    $('api-key').textContent = state.apiKey;
+
+    if (!opts.silent) setMsg($('dash-msg'), 'info', 'Loading profile…');
+    try {
+      var data = await api('/user/me');
+      var tier = String(data.tier || 'unknown').toLowerCase();
+      state.tier = tier;
+      var badge = $('tier-badge');
+      badge.textContent = tier.toUpperCase();
+      badge.className = 'badge ' + (['free', 'premium', 'pro'].indexOf(tier) >= 0 ? tier : 'unknown');
+
+      var used = Number(data.daily_usage != null ? data.daily_usage : 0);
+      var limit = Number(data.daily_limit != null ? data.daily_limit : 0);
+      if (!isFinite(used)) used = 0;
+      $('usage').textContent = limit > 0
+        ? used + ' / ' + limit + ' checks today'
+        : used + ' checks today (no limit reported)';
+      var pct = limit > 0 ? Math.max(0, Math.min(100, (used / limit) * 100)) : 0;
+      $('usage-bar').style.width = pct + '%';
+
+      if (opts.message) setMsg($('dash-msg'), 'success', opts.message);
+      else setMsg($('dash-msg'), '', '');
+    } catch (err) {
+      if (err.status === 401) return;   // handleUnauthorized() already reset the UI
+      setMsg($('dash-msg'), 'error', 'Could not load your profile: ' + (err.message || 'unknown error'));
+    }
+  }
+
+  async function doRevoke() {
+    var btn = $('btn-revoke-yes');
+    setBusy(btn, true, 'Regenerating…');
+    try {
+      var data = await api('/user/key/revoke', { method: 'POST' });
+      var key = data.api_key || data.key;
+      if (!key) throw new ApiError('The server did not return a new API key.', 200, null);
+
+      // Drop the old key from storage and memory before adopting the new one.
+      storeDel(STORAGE_KEY);
+      state.apiKey = key;
+      storeSet(STORAGE_KEY, key);
+
+      $('api-key').textContent = key;
+      $('revoke-confirm').classList.add('hidden');
+      setMsg($('dash-msg'), 'success', 'API key regenerated. The previous key is no longer valid.');
+      toast('New API key generated', 'success');
+      loadProfile({ silent: true });
+    } catch (err) {
+      setMsg($('dash-msg'), 'error', err.message || 'Could not regenerate the API key.');
+    } finally {
+      setBusy(btn, false);
+      clear(btn);
+      btn.appendChild(document.createTextNode('Yes, regenerate'));
+    }
+  }
+
+  /* =========================================================
+     Check
+     ========================================================= */
+  function parseProxies(raw) {
+    var seen = {};
+    return String(raw || '')
+      .split(/\r?\n/)
+      .map(function (p) { return p.trim(); })
+      .filter(function (p) {
+        if (!p || p.charAt(0) === '#') return false;
+        if (seen[p]) return false;
+        seen[p] = true;
+        return true;
+      });
+  }
+
+  function updateProxyCount() {
+    var n = parseProxies($('check-proxies').value).length;
+    $('proxy-count').textContent = n === 0 ? 'No proxies — direct connection' : n + (n === 1 ? ' proxy' : ' proxies') + ' queued';
+  }
+
+  async function runCheck(ev) {
+    ev.preventDefault();
+    var btn = $('btn-check');
+    var host = $('result');
+    var email = $('check-email').value.trim();
+    var password = $('check-pass').value;
+    var proxies = parseProxies($('check-proxies').value);
+
+    clear(host);
+    if (!email) { setMsg($('dash-msg'), 'error', 'Enter the account email to check.'); $('check-email').focus(); return; }
+    if (!password) { setMsg($('dash-msg'), 'error', 'Enter the account password to check.'); $('check-pass').focus(); return; }
+    setMsg($('dash-msg'), '', '');
+
+    setBusy(btn, true, 'Checking…');
+    host.appendChild(el('div', { class: 'status info', text: 'Running check…' }));
+
+    var data;
+    try {
+      data = await api('/check', { method: 'POST', body: { email: email, password: password, proxies: proxies } });
+    } catch (err) {
+      clear(host);
+      host.appendChild(el('div', { class: 'status error' }, [
+        el('strong', { text: 'Check failed. ' }),
+        document.createTextNode(err.message || 'Unknown error.')
+      ]));
+      return;
+    } finally {
+      setBusy(btn, false);
+    }
+
+    try {
+      clear(host);
+
+      var payload = {};
+      Object.keys(data).forEach(function (k) { if (k !== 'signature' && k !== 'watermark') payload[k] = data[k]; });
+
+      var statusValue = data.status;
+      var statusText = (statusValue === null || statusValue === undefined)
+        ? 'unknown'
+        : (typeof statusValue === 'object' ? JSON.stringify(statusValue) : String(statusValue));
+
+      var watermarkText = (typeof data.watermark === 'string' && data.watermark) ? data.watermark : '(none returned)';
+      var watermarkMatches = watermarkText.trim() === EXPECTED_WATERMARK;
+
+      var dl = el('dl', { class: 'kv' });
+      dl.appendChild(el('dt', { text: 'Status' }));
+      dl.appendChild(el('dd', {}, [
+        el('span', { class: 'badge ' + (statusText === 'hit' ? 'premium' : (statusText === 'bad' || statusText === 'error' ? 'unknown' : 'free')), text: statusText })
+      ]));
+
+      dl.appendChild(el('dt', { text: 'Watermark' }));
+      dl.appendChild(el('dd', {}, [
+        el('span', { class: 'watermark', text: watermarkText }),
+        document.createTextNode(' '),
+        el('span', {
+          class: 'pill ' + (watermarkMatches ? 'ok' : 'bad'),
+          text: (watermarkMatches ? '✅ matches expected' : '❌ expected “' + EXPECTED_WATERMARK + '”')
+        })
+      ]));
+
+      dl.appendChild(el('dt', { text: 'Signature' }));
+      dl.appendChild(el('dd', {}, [el('code', { text: String(data.signature || '(none)') })]));
+
+      dl.appendChild(el('dt', { text: 'Client-side HMAC' }));
+      var sigCell = el('dd');
+      host.appendChild(dl);
+
+      var ver = await verifySignature(data);
+      sigCell.appendChild(sigPill(ver));
+      dl.appendChild(sigCell);
+
+      host.appendChild(el('h3', { text: 'Raw payload', style: 'margin-top:1rem' }));
+      host.appendChild(el('pre', { text: JSON.stringify(payload, null, 2) }));
+
+      loadProfile({ silent: true });
+    } catch (renderErr) {
+      clear(host);
+      host.appendChild(el('div', { class: 'status error' }, [
+        el('strong', { text: 'The check completed, but the result could not be displayed. ' }),
+        el('code', { text: JSON.stringify(data) })
+      ]));
+    }
+  }
+
+  /* =========================================================
+     Admin panel
+     ========================================================= */
+  var ADMIN_COLUMNS = ['email', 'tier', 'daily_usage', 'daily_limit', 'total_checks', 'created_at', 'last_check_at', 'api_key', 'device_fingerprint'];
+  var SENSITIVE = { api_key: true, device_fingerprint: true, password: true, password_hash: true };
+
+  function mask(v) {
+    var s = String(v == null ? '' : v);
+    if (s.length <= 8) return '••••';
+    return s.slice(0, 4) + '…' + s.slice(-4);
+  }
+
+  function openAdmin() {
+    $('admin-section').classList.remove('hidden');
+    $('admin-section').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    var k = $('admin-key');
+    if (k) setTimeout(function () { k.focus(); }, 250);
+  }
+
+  async function loadAdmin(ev) {
+    ev.preventDefault();
+    var btn = $('btn-admin');
+    var msg = $('admin-msg');
+    var out = $('admin-output');
+    var adminKey = $('admin-key').value.trim();
+
+    clear(out);
+    if (!adminKey) { setMsg(msg, 'error', 'Enter the admin API key first.'); $('admin-key').focus(); return; }
+
+    setBusy(btn, true, 'Loading users…');
+    setMsg(msg, '', '');
+
+    var res;
+    try {
+      var ctrl = ('AbortController' in window) ? new AbortController() : null;
+      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, REQUEST_TIMEOUT_MS) : null;
+      res = await fetch(API_BASE + '/admin/users', {
+        headers: { 'X-Admin-Key': adminKey, 'Accept': 'application/json' },
+        signal: ctrl ? ctrl.signal : undefined,
+        credentials: 'same-origin'
+      });
+      if (timer) clearTimeout(timer);
+    } catch (err) {
+      var timedOut = err && err.name === 'AbortError';
+      setMsg(msg, 'error', timedOut
+        ? 'The request timed out. Please try again.'
+        : 'Network error — could not reach /admin/users.');
+      return;
+    } finally {
+      setBusy(btn, false);
+    }
+
+    var raw = '';
+    try { raw = await res.text(); } catch (e) { raw = ''; }
+    var data = null;
+    if (raw) {
+      try { data = JSON.parse(raw); } catch (e) { data = null; }
+    }
+
+    if (!res.ok) {
+      setMsg(msg, 'error', friendlyStatus(res.status, data));
+      return;
+    }
+    if (data === null) { setMsg(msg, 'error', 'The server returned a response that is not valid JSON.'); return; }
+
+    var users = Array.isArray(data) ? data
+      : (Array.isArray(data.users) ? data.users
+      : (Array.isArray(data.items) ? data.items
+      : (Array.isArray(data.data) ? data.data : null)));
+
+    if (!users) {
+      setMsg(msg, 'info', 'Response received, but it did not contain a recognisable user list.');
+      out.appendChild(el('pre', { text: JSON.stringify(data, null, 2) }));
+      return;
+    }
+    if (users.length === 0) {
+      setMsg(msg, 'info', 'No users found.');
+      return;
+    }
+
+    // Choose columns that actually exist in the payload.
+    var present = {};
+    users.forEach(function (u) {
+      if (u && typeof u === 'object') Object.keys(u).forEach(function (k) { present[k] = true; });
+    });
+    var cols = ADMIN_COLUMNS.filter(function (c) { return present[c]; });
+    Object.keys(present).forEach(function (k) {
+      if (cols.indexOf(k) < 0 && cols.length < 9) cols.push(k);
+    });
+    if (cols.length === 0) cols = ['value'];
+
+    var table = el('table');
+    table.appendChild(el('caption', { text: users.length + (users.length === 1 ? ' user' : ' users') }));
+    var thead = el('thead');
+    var hr = el('tr');
+    cols.forEach(function (c) { hr.appendChild(el('th', { scope: 'col', text: c.replace(/_/g, ' ') })); });
+    thead.appendChild(hr);
+    table.appendChild(thead);
+
+    var tbody = el('tbody');
+    users.slice(0, 500).forEach(function (u) {
+      var tr = el('tr');
+      cols.forEach(function (c) {
+        var v = (u && typeof u === 'object') ? u[c] : u;
+        var text;
+        if (v === null || v === undefined || v === '') text = '—';
+        else if (SENSITIVE[c]) text = mask(v);
+        else if (typeof v === 'object') text = JSON.stringify(v);
+        else text = String(v);
+        tr.appendChild(el('td', { class: c === 'email' ? 'email' : null, text: text }));
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    var scroller = el('div', { class: 'table-scroll' }, [table]);
+    out.appendChild(scroller);
+    if (users.length > 500) {
+      out.appendChild(el('p', { class: 'hint', text: 'Showing the first 500 of ' + users.length + ' users.' }));
+    }
+    setMsg(msg, 'success', 'Loaded ' + users.length + (users.length === 1 ? ' user' : ' users') + '. Sensitive fields are masked.');
+  }
+
+  /* =========================================================
+     Wiring
+     ========================================================= */
+  function wire() {
+    $('tab-register').addEventListener('click', function () { selectTab('register'); setMsg($('auth-msg'), '', ''); });
+    $('tab-login').addEventListener('click', function () { selectTab('login'); setMsg($('auth-msg'), '', ''); });
+
+    $('register-form').addEventListener('submit', register);
+    $('login-form').addEventListener('submit', login);
+    $('check-form').addEventListener('submit', runCheck);
+    $('admin-form').addEventListener('submit', loadAdmin);
+
+    $('fp-refresh').addEventListener('click', function () {
+      refreshFingerprint();
+      toast('Fingerprint regenerated', 'success');
+    });
+
+    $('btn-copy-key').addEventListener('click', async function () {
+      var ok = await copyText(state.apiKey || $('api-key').textContent);
+      toast(ok ? 'API key copied to clipboard' : 'Copy failed — select the key manually', ok ? 'success' : 'error');
+    });
+
+    $('btn-logout').addEventListener('click', function () {
+      signOut('You have been signed out on this device.');
+      toast('Signed out');
+    });
+
+    $('btn-refresh').addEventListener('click', function () { loadProfile(); });
+
+    $('btn-revoke').addEventListener('click', function () {
+      $('revoke-confirm').classList.remove('hidden');
+      $('btn-revoke-yes').focus();
+    });
+    $('btn-revoke-no').addEventListener('click', function () {
+      $('revoke-confirm').classList.add('hidden');
+    });
+    $('btn-revoke-yes').addEventListener('click', doRevoke);
+
+    $('check-proxies').addEventListener('input', updateProxyCount);
+
+    $('btn-eye').addEventListener('click', function () {
+      var input = $('check-pass');
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      $('btn-eye').textContent = show ? '🙈' : '👁';
+      $('btn-eye').setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    });
+
+    $('admin-trigger').addEventListener('click', openAdmin);
+    $('btn-admin-close').addEventListener('click', function () {
+      $('admin-section').classList.add('hidden');
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+        e.preventDefault();
+        var sec = $('admin-section');
+        if (sec.classList.contains('hidden')) openAdmin();
+        else sec.classList.add('hidden');
+      }
+      if (e.key === 'Escape' && !$('revoke-confirm').classList.contains('hidden')) {
+        $('revoke-confirm').classList.add('hidden');
+      }
+    });
+
+    // Escape clears any open confirmation.
+    window.addEventListener('error', function (e) {
+      toast('Unexpected error: ' + (e.message || 'unknown'), 'error');
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      var m = (e.reason && e.reason.message) ? e.reason.message : String(e.reason || 'unknown');
+      toast('Unexpected error: ' + m, 'error');
+      e.preventDefault();
+    });
+  }
+
+  function init() {
+    try {
+      refreshFingerprint();
+      wire();
+      updateProxyCount();
+      selectTab('register');
+
+      var saved = storeGet(STORAGE_KEY);
+      if (saved) {
+        state.apiKey = saved;
+        showDashboard(true);
+        loadProfile();           // a rejected key triggers handleUnauthorized() -> back to login
+      } else {
+        showDashboard(false);
+      }
+    } catch (e) {
+      // Never leave a blank screen: surface the failure instead.
+      var host = $('auth-msg');
+      if (host) setMsg(host, 'error', 'The console failed to start: ' + ((e && e.message) || e));
+    }
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
 </script>
 </body>
 </html>
