@@ -1,3 +1,4 @@
+import asyncio
 import re
 import time
 import json
@@ -106,7 +107,8 @@ class XboxChecker:
             url_post_m = re.search(r'"urlPost":"(.+?)"', r1.text)
             
             if not sftag_m or not url_post_m:
-                return {"status": "ERROR", "duration": time.time() - start_time}
+                return {"status": "ERROR", "duration": time.time() - start_time,
+                        "error": "Could not parse the Microsoft login page (layout changed or blocked)"}
             
             sftag = sftag_m.group(1)
             url_post = url_post_m.group(1)
@@ -375,6 +377,54 @@ class XboxChecker:
                 }
 
         except requests.exceptions.Timeout:
-            return {"status": "TIMEOUT", "duration": time.time() - start_time}
+            return {"status": "TIMEOUT", "duration": time.time() - start_time,
+                    "error": "Upstream request timed out"}
         except Exception as e:
-            return {"status": "ERROR", "duration": time.time() - start_time}
+            return {"status": "ERROR", "duration": time.time() - start_time,
+                    "error": f"{type(e).__name__}: {str(e)[:160]}"}
+
+
+# ===================== PUBLIC API =====================
+MAX_PROXIES_PER_REQUEST = 20
+
+
+def check_account(email: str, password: str, proxies=None) -> dict:
+    """Run a single synchronous account check with input validation.
+
+    Returns one of the standard result dicts: ``PREMIUM`` / ``FREE`` /
+    ``BAD`` / ``2FA`` / ``BANNED`` / ``TIMEOUT`` / ``ERROR``.
+    """
+    started = time.time()
+    email = (email or "").strip()
+    password = password or ""
+    if not email or not password:
+        return {"status": "ERROR", "duration": 0, "error": "email and password are required"}
+    if len(email) > 320 or len(password) > 512:
+        return {"status": "ERROR", "duration": 0, "error": "email or password too long"}
+
+    clean_proxies: list[str] = []
+    if proxies:
+        if not isinstance(proxies, (list, tuple)):
+            return {"status": "ERROR", "duration": 0, "error": "proxies must be a list of strings"}
+        seen = set()
+        for proxy in proxies:
+            if not isinstance(proxy, str):
+                continue
+            proxy = proxy.strip()
+            if not proxy or proxy in seen:
+                continue
+            seen.add(proxy)
+            clean_proxies.append(proxy)
+            if len(clean_proxies) >= MAX_PROXIES_PER_REQUEST:
+                break
+
+    proxy_manager = ProxyManager(clean_proxies) if clean_proxies else None
+    try:
+        return XboxChecker(proxy_manager=proxy_manager).check(email, password)
+    except Exception as exc:  # never let a check raise into the API layer
+        return {"status": "ERROR", "duration": time.time() - started, "error": str(exc)[:200]}
+
+
+async def check_account_async(email: str, password: str, proxies=None) -> dict:
+    """Async wrapper that runs the blocking checker in a worker thread."""
+    return await asyncio.to_thread(check_account, email, password, proxies)

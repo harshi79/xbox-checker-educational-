@@ -274,6 +274,15 @@
   footer a { color: #6b7280; }
   .admin-trigger { background: none; border: none; padding: 0; margin: 0; width: auto; color: #565b66; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: underline dotted; }
   .admin-trigger:hover { color: #a5b4fc; }
+  .notice {
+    background: rgba(245,158,11,.10);
+    border: 1px solid rgba(245,158,11,.38);
+    color: #fcd34d;
+    border-radius: 10px;
+    padding: .6rem .85rem;
+    font-size: .85rem;
+    margin: 0 0 1.25rem;
+  }
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
   .noscript { background: rgba(239,68,68,.14); border: 1px solid rgba(239,68,68,.45); color: #fca5a5; padding: .8rem 1rem; border-radius: 10px; margin-bottom: 1rem; }
 
@@ -302,8 +311,9 @@
 <div class="container">
 
   <header>
-    <h1>🎮 Xbox Checker SaaS</h1>
-    <p class="sub">Demonstration console — register, manage your API key, and run watermarked, signed checks.</p>
+    <h1>🎮 Xbox Checker</h1>
+    <p class="sub">Check Xbox &amp; Microsoft account Game Pass and subscription status — register, manage your API key, and run watermarked, signed checks.</p>
+    <div class="notice" role="note">🔒 Educational project — only check accounts you own or are explicitly authorised to test.</div>
   </header>
 
   <noscript>
@@ -1014,6 +1024,31 @@
     $('proxy-count').textContent = n === 0 ? 'No proxies — direct connection' : n + (n === 1 ? ' proxy' : ' proxies') + ' queued';
   }
 
+  /* Map checker statuses to badge styles. Handles the live API
+     (PREMIUM/FREE/BAD/2FA/BANNED/TIMEOUT/ERROR) and legacy hit/bad. */
+  function statusBadgeClass(s) {
+    var t = String(s == null ? '' : s).toLowerCase();
+    if (t === 'hit' || t === 'premium') return 'premium';
+    if (t === 'free' || t === 'miss') return 'free';
+    if (t === '2fa' || t === 'pro') return 'pro';
+    return 'unknown';
+  }
+
+  function statusHint(s) {
+    var t = String(s == null ? '' : s).toUpperCase();
+    var hints = {
+      'PREMIUM': 'Active Game Pass / subscription found.',
+      'HIT': 'Active Game Pass / subscription found.',
+      'FREE': 'Valid account, no active subscription found.',
+      'BAD': 'Invalid credentials or account does not exist.',
+      '2FA': 'Valid credentials, but two-factor approval is required.',
+      'BANNED': 'Account is banned or suspended.',
+      'TIMEOUT': 'The check timed out — try again or add proxies.',
+      'ERROR': 'The check could not complete.'
+    };
+    return hints[t] || '';
+  }
+
   async function runCheck(ev) {
     ev.preventDefault();
     var btn = $('btn-check');
@@ -1060,9 +1095,47 @@
 
       var dl = el('dl', { class: 'kv' });
       dl.appendChild(el('dt', { text: 'Status' }));
-      dl.appendChild(el('dd', {}, [
-        el('span', { class: 'badge ' + (statusText === 'hit' ? 'premium' : (statusText === 'bad' || statusText === 'error' ? 'unknown' : 'free')), text: statusText })
-      ]));
+      var statusCell = [el('span', { class: 'badge ' + statusBadgeClass(statusText), text: statusText })];
+      var hint = statusHint(statusText);
+      if (hint) {
+        statusCell.push(document.createTextNode(' '));
+        statusCell.push(el('span', { class: 'hint', text: hint }));
+      }
+      dl.appendChild(el('dd', {}, statusCell));
+
+      // Parsed account details (gamertag, gamerscore, Game Pass plan).
+      var details = (data.data && typeof data.data === 'object') ? data.data : null;
+      if (!details && data.gamertag) details = { gamertag: data.gamertag };  // legacy shape
+      if (details) {
+        if (details.gamertag) {
+          dl.appendChild(el('dt', { text: 'Gamertag' }));
+          dl.appendChild(el('dd', {}, [el('strong', { text: String(details.gamertag) })]));
+        }
+        if (details.gamerscore !== null && details.gamerscore !== undefined && details.gamerscore !== '') {
+          dl.appendChild(el('dt', { text: 'Gamerscore' }));
+          dl.appendChild(el('dd', { text: String(details.gamerscore) }));
+        }
+        if (details.gamepass) {
+          dl.appendChild(el('dt', { text: 'Game Pass' }));
+          dl.appendChild(el('dd', {}, [el('span', { class: 'badge premium', text: String(details.gamepass) })]));
+        }
+        if (Array.isArray(details.subscriptions) && details.subscriptions.length) {
+          dl.appendChild(el('dt', { text: 'Subscriptions' }));
+          dl.appendChild(el('dd', { text: details.subscriptions.join(', ') }));
+        }
+      }
+      if (typeof data.duration === 'number' && isFinite(data.duration)) {
+        dl.appendChild(el('dt', { text: 'Duration' }));
+        dl.appendChild(el('dd', { text: data.duration.toFixed(2) + 's' }));
+      }
+      if (data.rate_limit_remaining !== null && data.rate_limit_remaining !== undefined) {
+        dl.appendChild(el('dt', { text: 'Remaining today' }));
+        dl.appendChild(el('dd', { text: String(data.rate_limit_remaining) }));
+      }
+      if (data.error) {
+        dl.appendChild(el('dt', { text: 'Error' }));
+        dl.appendChild(el('dd', {}, [el('code', { text: String(data.error) })]));
+      }
 
       dl.appendChild(el('dt', { text: 'Watermark' }));
       dl.appendChild(el('dd', {}, [
