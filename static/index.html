@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xbox Checker SaaS</title>
+    <style>
+        :root { --bg: #0f0f13; --card: #1a1a24; --accent: #6366f1; --text: #e4e4e7; --success: #22c55e; --error: #ef4444; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 2rem; }
+        .container { max-width: 900px; margin: 0 auto; }
+        .card { background: var(--card); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+        h1 { color: var(--accent); margin-bottom: 0.5rem; }
+        h2 { margin: 1rem 0 0.5rem; color: var(--accent); }
+        input, textarea, button { width: 100%; padding: 0.75rem; margin: 0.5rem 0; border-radius: 8px; border: 1px solid #333; background: #252533; color: var(--text); }
+        button { background: var(--accent); border: none; cursor: pointer; font-weight: 600; transition: opacity 0.2s; }
+        button:hover { opacity: 0.9; }
+        button.secondary { background: #333; }
+        .hidden { display: none; }
+        .status { padding: 0.5rem; border-radius: 6px; margin: 0.5rem 0; }
+        .status.success { background: rgba(34,197,94,0.15); color: var(--success); }
+        .status.error { background: rgba(239,68,68,0.15); color: var(--error); }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
+        .badge { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.875rem; background: #333; }
+        .badge.premium { background: linear-gradient(135deg, #6366f1, #a855f7); }
+        #result { white-space: pre-wrap; font-family: monospace; background: #0a0a0f; padding: 1rem; border-radius: 8px; max-height: 300px; overflow-y: auto; }
+        footer { text-align: center; padding: 2rem; color: #666; font-size: 0.875rem; }
+        .watermark { color: #6366f1; font-weight: 600; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🎮 Xbox Checker SaaS</h1>
+    
+    <!-- Auth Section -->
+    <div id="auth-section" class="card">
+        <h2>Get Started</h2>
+        <div id="register-form">
+            <input type="email" id="reg-email" placeholder="Email">
+            <input type="password" id="reg-pass" placeholder="Password (min 8 chars)">
+            <input type="text" id="reg-fp" placeholder="Device Fingerprint" readonly>
+            <button onclick="register()">Register</button>
+        </div>
+        <div id="login-form" class="hidden">
+            <input type="email" id="login-email" placeholder="Email">
+            <input type="password" id="login-pass" placeholder="Password">
+            <button onclick="login()">Login</button>
+            <button class="secondary" onclick="showRegister()">Create Account</button>
+        </div>
+        <div id="auth-msg"></div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard" class="card hidden">
+        <h2>Dashboard</h2>
+        <div class="grid">
+            <div><strong>API Key:</strong><br><code id="api-key"></code></div>
+            <div><strong>Tier:</strong><br><span id="tier-badge" class="badge"></span></div>
+            <div><strong>Usage:</strong><br><span id="usage"></span></div>
+        </div>
+        <button class="secondary" onclick="revokeKey()">🔄 Regenerate API Key</button>
+        
+        <h3 style="margin:1.5rem 0 0.5rem">Test Check</h3>
+        <input type="text" id="check-email" placeholder="Email">
+        <input type="password" id="check-pass" placeholder="Password">
+        <textarea id="check-proxies" placeholder="Proxies (one per line, optional)&#10;http://user:pass@host:port&#10;socks5://host:port"></textarea>
+        <button onclick="runCheck()">🔍 Run Check</button>
+        <div id="result"></div>
+    </div>
+
+    <!-- Admin (if key provided) -->
+    <div id="admin-section" class="card hidden">
+        <h2>🔐 Admin Panel</h2>
+        <input type="password" id="admin-key" placeholder="Admin API Key">
+        <button onclick="loadAdmin()">Load Users</button>
+        <pre id="admin-output"></pre>
+    </div>
+
+    <footer>
+        <span class="watermark">Provided by @yorichiiprime</span> • All checks logged • Use responsibly
+    </footer>
+</div>
+
+<script>
+// Device fingerprint (simple canvas + navigator hash)
+function getFingerprint() {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    ctx.textBaseline = 'top';
+    ctx.font = '14px Arial';
+    ctx.fillText('fingerprint', 2, 2);
+    const hash = [...canvas.toDataURL()].reduce((a,c)=>a+c.charCodeAt(0),0);
+    return `${navigator.userAgent}${screen.width}${screen.height}${hash}`.split('').reduce((a,c)=>((a<<5)-a+c.charCodeAt(0))|0,0).toString(16);
+}
+document.getElementById('reg-fp').value = getFingerprint();
+
+// Auth state
+let apiKey = localStorage.getItem('xbsp_api_key');
+if (apiKey) {
+    document.getElementById('auth-section').classList.add('hidden');
+    document.getElementById('dashboard').classList.remove('hidden');
+    loadProfile();
+}
+
+function showRegister() {
+    document.getElementById('register-form').classList.remove('hidden');
+    document.getElementById('login-form').classList.add('hidden');
+}
+
+async function api(endpoint, method='GET', body=null) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+    const res = await fetch(endpoint, { method, headers, body: body ? JSON.stringify(body) : null });
+    return res.json();
+}
+
+async function register() {
+    const email = document.getElementById('reg-email').value;
+    const password = document.getElementById('reg-pass').value;
+    const fp = document.getElementById('reg-fp').value;
+    const msg = document.getElementById('auth-msg');
+    
+    const data = await api('/auth/register', 'POST', { email, password, device_fingerprint: fp });
+    if (data.api_key) {
+        localStorage.setItem('xbsp_api_key', data.api_key);
+        apiKey = data.api_key;
+        document.getElementById('auth-section').classList.add('hidden');
+        document.getElementById('dashboard').classList.remove('hidden');
+        loadProfile();
+    } else {
+        msg.innerHTML = `<div class="status error">${data.detail || 'Registration failed'}</div>`;
+    }
+}
+
+async function login() {
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-pass').value;
+    const msg = document.getElementById('auth-msg');
+    
+    const data = await api('/auth/login', 'POST', { email, password });
+    if (data.access_token) {
+        localStorage.setItem('xbsp_api_key', data.api_key);
+        apiKey = data.api_key;
+        document.getElementById('auth-section').classList.add('hidden');
+        document.getElementById('dashboard').classList.remove('hidden');
+        loadProfile();
+    } else {
+        msg.innerHTML = `<div class="status error">${data.detail || 'Login failed'}</div>`;
+    }
+}
+
+async function loadProfile() {
+    const data = await api('/user/me');
+    document.getElementById('api-key').textContent = apiKey;
+    document.getElementById('tier-badge').textContent = data.tier.toUpperCase();
+    document.getElementById('tier-badge').className = `badge ${data.tier}`;
+    document.getElementById('usage').textContent = `${data.daily_usage}/${data.daily_limit} checks today`;
+}
+
+async function revokeKey() {
+    if (!confirm('Regenerate API key? Old key will stop working.')) return;
+    const data = await api('/user/key/revoke', 'POST');
+    if (data.api_key) {
+        localStorage.setItem('xbsp_api_key', data.api_key);
+        apiKey = data.api_key;
+        loadProfile();
+        alert('New API key generated!');
+    }
+}
+
+async function runCheck() {
+    const email = document.getElementById('check-email').value;
+    const password = document.getElementById('check-pass').value;
+    const proxies = document.getElementById('check-proxies').value.trim().split('\n').filter(p=>p);
+    const resultDiv = document.getElementById('result');
+    
+    resultDiv.textContent = 'Checking...';
+    const data = await api('/check', 'POST', { email, password, proxies });
+    
+    // Verify signature client-side (optional)
+    const { signature, watermark, ...payload } = data;
+    const signable = JSON.stringify({ ...payload, watermark }, Object.keys(payload).sort());
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode('dev-secret-change-in-prod'); // Should match server
+    const msgData = encoder.encode(signable);
+    const key = await crypto.subtle.importKey('raw', keyData, {name:'HMAC',hash:'SHA-256'}, false, ['verify']);
+    const sigBytes = Uint8Array.from(signature.match(/.{1,2}/g).map(b=>parseInt(b,16)));
+    const valid = await crypto.subtle.verify('HMAC', key, sigBytes, msgData);
+    
+    resultDiv.innerHTML = `<strong>Status:</strong> ${data.status}<br><strong>Watermark:</strong> <span class="watermark">${data.watermark}</span><br><strong>Signature Valid:</strong> ${valid ? '✅' : '❌'}<br><br><pre>${JSON.stringify(payload, null, 2)}</pre>`;
+}
+
+async function loadAdmin() {
+    const adminKey = document.getElementById('admin-key').value;
+    const res = await fetch('/admin/users', { headers: { 'X-Admin-Key': adminKey } });
+    const data = await res.json();
+    document.getElementById('admin-output').textContent = JSON.stringify(data, null, 2);
+}
+</script>
+</body>
+</html>
