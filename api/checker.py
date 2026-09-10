@@ -1,7 +1,6 @@
 import asyncio
 import re
 import time
-import json
 import random
 from threading import Lock
 from urllib.parse import urlparse, parse_qs, unquote
@@ -66,23 +65,14 @@ class ProxyManager:
         if at_idx != -1:
             # Has authentication: user:pass@host:port
             auth_part = proxy[:at_idx]     # user:pass
-            host_part = proxy[at_idx + 1:]    # host:port
-            
-            # Parse user:pass (could be user:pass or just user)
-            auth_split = auth_part.split(':', 1)
-            user = auth_split[0] if len(auth_split) > 0 else ''
-            # pass = auth_split[1] if len(auth_split) > 1 else ''  # not used for URL
-            
-            # Parse host:port
-            hp_split = host_part.split(':', 1)
-            host = hp_split[0] if len(hp_split) > 0 else ''
-            port = hp_split[1] if len(hp_split) > 1 else ''
-            
-            if host and port:
-                s = f"http://{host}:{port}"
+            host_part = proxy[at_idx + 1:]  # host:port
+
+            # requests supports credentials in the proxy URL itself, so
+            # keep user:pass attached to host:port (skip the @ when empty).
+            if host_part:
+                s = f"http://{auth_part}@{host_part}" if auth_part else f"http://{host_part}"
             else:
-                # Fallback: just use the host part if port missing
-                s = f"http://{host}" if host else f"http://{proxy}"
+                s = f"http://{proxy}"
         else:
             # No @ sign - could be host:port or ip:port
             # Could also be user:pass:ip:port (4 parts from original format)
@@ -319,7 +309,7 @@ class XboxChecker:
                         elif s.get('id') == 'Gamerscore':
                             try:
                                 gamerscore = int(s.get('value', 0))
-                            except:
+                            except Exception:
                                 pass
 
                 # === KONTROL 1: Xbox Subscriptions ===
@@ -342,7 +332,7 @@ class XboxChecker:
                                 if state.lower() == 'active':
                                     gamepass_type = sub_type
                                     break
-                except:
+                except Exception:
                     pass
 
                 # === KONTROL 2: Xbox Store ===
@@ -363,7 +353,7 @@ class XboxChecker:
                                     subscription_details.append(f"{sub_type}")
                                     gamepass_type = sub_type
                                     break
-                    except:
+                    except Exception:
                         pass
 
                 # === KONTROL 3: Minecraft API ===
@@ -406,7 +396,7 @@ class XboxChecker:
                                         gamepass_type = 'GAME PASS CORE'
                                     elif 'product_game_pass' in ent_text:
                                         gamepass_type = 'GAME PASS'
-                    except:
+                    except Exception:
                         pass
 
                 # === KONTROL 4: Microsoft Account ===
@@ -428,7 +418,7 @@ class XboxChecker:
                                         subscription_details.append(f"{sub_type}")
                                         gamepass_type = sub_type
                                         break
-                    except:
+                    except Exception:
                         pass
 
             # === SONUÇ ===
