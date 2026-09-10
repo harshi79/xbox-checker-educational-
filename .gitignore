@@ -4,18 +4,36 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+build/
+dist/
+*.spec
 
-# Local databases & env
-data/
-*.db
-*.db-wal
-*.db-shm
-.env
+# Results
+results/
+*.txt
+!combos.example.txt
+!proxies.example.txt
+!requirements.txt
+results.jsonl
+PREMIUM.txt
+FREE.txt
+BAD.txt
+2FA.txt
+BANNED.txt
 
-# Editors / OS
+# OS
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db
 
-# Test artifacts
-/tmp/
+# Exe
+*.exe
+*.pyc
+YorichiiChecker
+YorichiiChecker-linux
+YorichiiChecker-bundle/
+YorichiiChecker.pyz
+
+# Env
+.env

@@ -1,388 +1,198 @@
-# 🎮 Xbox Checker — Educational API Project
+# 🎮 Yorichii Xbox Checker - Professional Edition
 
-## 📚 Project Overview
+> **Green & Gold • Live Terminal • Bulk Checker • Auto Proxy Remover**  
+> **TG: https://t.me/whoevenyori** | **Provided by @yorichiiprime** | Educational Use Only  
+> **Version: 2.0-professional-green-gold**
 
-**Xbox Checker** is an educational API project that teaches modern web development concepts by checking Xbox Live account subscriptions. It is intentionally **API + docs only** — a single self-contained docs/console page, **no login, no registration, no database, no frameworks**:
-
-- **FastAPI** — modern Python web framework with auto-generated docs
-- **Pydantic** — request validation and typed response schemas
-- **Xbox Live OAuth 2.0** — the real Microsoft → Xbox auth token dance
-- **HMAC-SHA256 cryptography** — response signing and verification
-
-> ⚠️ **Educational Use Only**: This project is designed for learning purposes. Only check accounts you own or are explicitly authorised to test.
+Professional Xbox & Microsoft account checker with live terminal, bulk support, and smart proxy handling.
 
 ---
 
-## 🏗️ Architecture
+## ✨ Professional Features
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        EDUCATIONAL LAYERS                       │
-├─────────────────────────────────────────────────────────────────┤
-│  🌐 DOCS + CONSOLE (static/index.html, served at /)               │
-│  • Single file, pure HTML/CSS/JS — no frameworks, no build step  │
-│  • 3D brutalism UI: live API status, flip cards, 3D cube         │
-│  • Live console — call POST /check, verify the HMAC signature    │
-│    in-browser with Web Crypto, copy results as JSON or cURL      │
-│  • Full API reference, status codes, proxy formats, quickstart   │
-├─────────────────────────────────────────────────────────────────┤
-│  🔧 API (api/index.py - FastAPI)                                 │
-│  • POST /check — the only real endpoint                          │
-│  • GET /health — service health                                  │
-│  • GET /docs — auto-generated OpenAPI docs                       │
-│  • Pydantic request/response validation                          │
-│  • Generic JSON error handling (no stack traces leaked)          │
-├─────────────────────────────────────────────────────────────────┤
-│  🔐 SERVICES (api/)                                              │
-│  • checker.py — Xbox Live auth flow + subscription detection     │
-│  • watermark.py — HMAC-SHA256 response signing                   │
-├─────────────────────────────────────────────────────────────────┤
-│  📊 EXTERNAL SERVICES (live, called by checker.py)                │
-│  • Microsoft login (login.live.com)                              │
-│  • Xbox Live auth (user.auth.xboxlive.com, xsts.auth.xboxlive.com)│
-│  • Xbox profile / subscriptions / store APIs                     │
-│  • Minecraft entitlement services                                │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-There is deliberately **no authentication** on the API: no users table, no
-API keys, no JWTs. This keeps the project a clean study of API design,
-external service integration and cryptography. If you deploy it publicly,
-put a gateway (rate limiting, API keys, auth) in front.
+- **🌐 Own IP Fallback:** No proxies? Uses your own IP automatically (direct connection)
+- **🧹 Auto-Remove Dead Proxies:** Dead proxies are detected and removed during checking
+- **🔄 Retry Until Valid:** Tries combos one-by-one until `PREMIUM / FREE / BAD / 2FA / BANNED` — **no proxy errors allowed**, only valid results
+- **📺 Live Terminal:** Real-time output with timestamp, live counter every 5 checks
+- **📦 Bulk Checking:** Check 1000s of combos with threading (up to 100 threads)
+- **🎨 Green & Gold Theme:** Professional branding with TG link
+- **💾 Smart Saving:** Auto-saves hits to `PREMIUM.txt`, `FREE.txt`, `BAD.txt`, `2FA.txt`, `results.jsonl`
 
 ---
 
-## 🛠️ Quick Start
-
-### Prerequisites
-
-- Python 3.11+
-
-### 1. Create a Virtual Environment
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 2. Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-**Key Packages & What They Teach:**
-
-| Package | Educational Focus |
-|---------|-------------------|
-| `fastapi` | Modern Python web framework, async, auto docs |
-| `uvicorn` | ASGI server, production deployment |
-| `pydantic` | Data validation, typed API schemas |
-| `requests` | Synchronous HTTP client for the Xbox flow |
-| `httpx` | Used by FastAPI's test client |
-| `python-dotenv` | Optional local `.env` loading |
-
-### 3. (Optional) Environment Configuration
-
-```bash
-cp .env.example .env
-```
-
-| Variable | Purpose |
-|----------|---------|
-| `WATERMARK_SECRET` | Shared secret for HMAC-SHA256 response signing |
-
-### 4. Run Locally
-
-```bash
-uvicorn api.index:app --reload
-```
-
-- **Docs + live console**: http://localhost:8000 (this is where users start)
-- Interactive API docs: http://localhost:8000/docs
-- OpenAPI schema: http://localhost:8000/openapi.json
-- Health check: http://localhost:8000/health
-
-The console at `/` lets users run a real check in the browser and sees the
-response's HMAC signature verified live (Web Crypto, using the secret from
-`.env` when set) — the docs section on the same page covers every endpoint,
-status code, proxy format and the quickstart.
-
----
-
-## 📖 API Reference
-
-### `POST /check`
-
-Checks a Microsoft/Xbox account for active subscriptions. **No authentication
-headers required.**
-
-**Request body**
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `email` | string (1–320) | Microsoft account email |
-| `password` | string (1–512) | Microsoft account password |
-| `proxies` | string[] (optional, max 20) | `ip:port`, `user:pass:ip:port`, `http://host:port`, `socks5://host:port`, `user:pass@host:port` |
-
-**Example**
-
-```bash
-curl -s http://localhost:8000/check \
-  -H "Content-Type: application/json" \
-  -d '{"email": "you@example.com", "password": "your-password"}'
-```
-
-**Response `200`** — every check response is watermarked + HMAC signed:
-
-```json
-{
-  "status": "PREMIUM",
-  "duration": 4.21,
-  "data": {
-    "gamertag": "YourGamertag",
-    "gamerscore": 12345,
-    "subscriptions": ["XBOX GAME PASS ULTIMATE"],
-    "gamepass": "XBOX GAME PASS ULTIMATE"
-  },
-  "watermark": "Provided by @yorichiiprime",
-  "signature": "9f2c…64 hex chars…"
-}
-```
-
-**`status` values**
-
-| Status | Meaning |
-|--------|---------|
-| `PREMIUM` | Active subscription found (details in `data`) |
-| `FREE` | Account valid, no active subscription |
-| `BAD` | Credentials rejected / account does not exist |
-| `2FA` | Account requires two-step verification |
-| `BANNED` | Account suspended or banned |
-| `TIMEOUT` | Upstream request timed out |
-| `ERROR` | Something failed (see `error` field) |
-
-**Errors**
-
-| Code | When |
-|------|------|
-| `400` | Empty email/password after trimming |
-| `413` | More than 20 proxies supplied |
-| `422` | Invalid request body (Pydantic validation) |
-| `500` | Unhandled internal error (JSON, no stack trace) |
-
-### `GET /health`
-
-```json
-{ "status": "ok", "version": "2.0.0", "timestamp": "2026-09-10T12:00:00+00:00" }
-```
-
-### `GET /docs` & `GET /openapi.json`
-
-Auto-generated interactive documentation (Swagger UI) and the OpenAPI
-3.1 schema — built from the Pydantic models in `api/index.py`.
-
-### `GET /`
-
-The docs + live console page (single-file 3D brutalism UI, no frameworks).
-Shows live API status, the full API reference, and a working form for
-`POST /check` with in-browser signature verification.
-
----
-
-## 🎓 Educational Concepts Covered
-
-### 1. **FastAPI & Pydantic Schemas**
-
-```python
-class CheckRequest(BaseModel):
-    email: str = Field(..., min_length=1, max_length=320)
-    password: str = Field(..., min_length=1, max_length=512)
-    proxies: Optional[list[str]] = None
-```
-
-**Learning points:** type hints drive both validation *and* the auto docs at
-`/docs`; `Field()` constraints enforce business rules before your code runs.
-
-### 2. **OAuth 2.0 & the Xbox Live Auth Dance**
-
-`api/checker.py` walks the real token chain:
-
-1. **Login** — GET `login.live.com/oauth20_authorize.srf`, parse `PPFT`/`urlPost`
-2. **Token exchange** — POST credentials, extract `access_token` from the redirect fragment
-3. **Xbox auth** — RPS ticket → `user.auth.xboxlive.com` → XBL JWT
-4. **XSTS auth** — XBL token → `xsts.auth.xboxlive.com` → XSTS token
-5. **Probes** — profile (gamertag/gamerscore), subscriptions API, store
-   purchases, Minecraft entitlements, Microsoft account services
-
-**Learning points:** OAuth token fragments, chained token exchange, probing
-multiple JSON APIs with one identity, and graceful handling of each failure
-mode (`BAD`, `2FA`, `BANNED`, `TIMEOUT`).
-
-### 3. **HMAC-SHA256 Response Signing**
-
-```python
-# api/watermark.py
-message = json.dumps(signable, sort_keys=True, separators=(",", ":")).encode()
-signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
-```
-
-**Learning points:** canonical JSON serialization (sorted keys, compact
-separators), integrity verification, tamper detection.
-
-**Verify a signature yourself** (any client that knows the secret):
-
-```python
-import hashlib, hmac, json
-
-def verify(payload: dict, secret: str) -> bool:
-    provided = payload.pop("signature", None)
-    expected = hmac.new(
-        secret.encode(),
-        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(),
-        hashlib.sha256,
-    ).hexdigest()
-    return hmac.compare_digest(provided or "", expected)
-```
-
-### 4. **API Design Best Practices**
-
-| Pattern | Implementation | Educational Goal |
-|---------|----------------|------------------|
-| Typed responses | `CheckResponse` model | Predictable, documented output |
-| Clear error codes | `400 / 413 / 422 / 500` | HTTP semantics done right |
-| Versioning | `APP_VERSION = "2.0.0"` | API evolution |
-| Safe errors | Generic JSON 500, no stack traces | Security by default |
-| OpenAPI docs | `/docs`, `/openapi.json` | Docs as code |
-
-### 5. **Proxy Handling**
-
-`ProxyManager` in `checker.py` normalises many real-world proxy formats
-(`ip:port`, `user:pass:ip:port`, scheme prefixes, `user:pass@host:port`),
-tracks failing proxies, and rotates through the pool — a nice study in
-defensive input normalisation.
-
-### 6. **Canonical JSON & Cross-Language Crypto**
-
-The console page verifies server signatures in the browser (Web Crypto).
-Matching Python's `json.dumps(sort_keys=True, separators=(",",":"))`
-byte-for-byte in JavaScript means: recursive key sorting, compact
-separators, `ensure_ascii`-style `\uXXXX` escaping, and the `4.0` vs `4`
-float edge. `qa-signature.test.mjs` proves the two sides agree.
-
-**Learning points:** canonicalisation as a contract, Web Crypto HMAC,
-surrogate-pair escaping, and how to test the same logic in two languages.
-
-### 7. **A Whole UI in One File**
-
-The docs/console page is a single dependency-free HTML file: CSS 3D
-transforms (spinning cube, perspective flip cards, press-down buttons),
-marquee, live API-status polling, and a working API client with error
-handling — no frameworks, no build step.
-
----
-
-## 🧪 Testing
-
-### Backend (Python, offline)
-
-```bash
-python3 qa-backend.test.py
-```
-
-**44 assertions, fully offline:**
-- Health, docs and the console page
-- Login/register/admin endpoints are gone (404s)
-- `/check` with a stubbed Xbox network (watermark + signature verification)
-- Input validation (422 / 413 / 400 — never a 500)
-- Checker input validation and proxy normalisation, all formats (no network)
-
-### Cross-language signature audit (Node, optional)
-
-```bash
-node qa-signature.test.mjs
-# if python3 lacks the deps:  PYTHON=.venv/bin/python node qa-signature.test.mjs
-```
-
-**14 assertions.** Extracts the pure canonical-JSON functions from the
-console page, signs the same realistic payloads with the real Python
-`watermark` module, and proves the two implementations agree byte-for-byte —
-including the Python `4.0` vs JS `4` float edge case and tamper detection.
-This is the guarantee that the in-browser "✓ SIGNATURE VERIFIED" badge is
-actually true.
-
----
-
-## 📁 Project Structure
+## 📁 Clean Repo - Only Needed Files for EXE
 
 ```
-xbox-checker-educational/
+YorichiiChecker/
+├── yorichii_checker_cli.py   <- Main professional checker (GREEN & GOLD)
 ├── api/
-│   ├── __init__.py          # package marker
-│   ├── index.py             # FastAPI app + routes (the whole API)
-│   ├── checker.py           # Xbox Live auth flow + subscription detection
-│   └── watermark.py         # HMAC-SHA256 response signing
-├── static/
-│   └── index.html           # Docs + live console (served at /)
-├── qa-backend.test.py       # Offline backend test suite (Python)
-├── qa-signature.test.mjs    # JS<->Python signature audit (Node, optional)
-├── requirements.txt         # Python dependencies
-├── vercel.json              # Vercel deployment config
-├── .env.example             # Environment variables template
-└── README.md                # This documentation
+│   ├── __init__.py
+│   ├── checker.py            <- Core Xbox checker logic
+│   └── watermark.py          <- Branding watermark
+├── yorichii_icon.ico         <- Green & Gold icon for exe
+├── make_exe.py               <- One-click exe maker (same folder output)
+├── MAKE_EXE.bat              <- Double-click to make exe on Windows
+├── combos.example.txt        <- Example combos
+├── proxies.example.txt       <- Example proxies
+├── requirements.txt          <- Only requests + urllib3
+├── LICENSE
+└── README.md
+```
+
+**No unnecessary files** — only what you need to make exe. Download, extract, make exe, opensource ready!
+
+---
+
+## 🚀 How to Make EXE (Same Folder)
+
+### Super Simple - Windows:
+
+1. **Download repo and extract** - keep all files in same folder
+2. **Double-click `MAKE_EXE.bat`**  
+   OR run: `python make_exe.py`
+3. **Done!** `YorichiiChecker.exe` appears **in SAME FOLDER**
+
+```bat
+YourFolder/
+├── YorichiiChecker.exe   <- EXE IN SAME FOLDER! Ready!
+├── yorichii_checker_cli.py
+├── api/
+└── yorichii_icon.ico
+```
+
+**What the builder does:**
+```bat
+pyinstaller --onefile --name YorichiiChecker --distpath . --icon yorichii_icon.ico --add-data "api;api" yorichii_checker_cli.py
+```
+`--distpath .` = exe in same folder (not dist/)
+
+### Manual Command (if bat fails):
+```bat
+pip install pyinstaller pillow
+python -m PyInstaller --onefile --console --name YorichiiChecker --distpath . --icon yorichii_icon.ico --add-data "api;api" yorichii_checker_cli.py
 ```
 
 ---
 
-## 🚀 Deployment (Vercel)
+## 💻 How to Use (Live Terminal Bulk)
+
+### Basic:
+```bash
+# Single combo
+YorichiiChecker.exe --combo test@example.com:password123
+
+# With proxy
+YorichiiChecker.exe --combo test@example.com:pass123 --proxy http://127.0.0.1:8080
+
+# Bulk with proxies
+YorichiiChecker.exe -i combos.txt -p proxies.txt -t 20
+
+# Bulk without proxies (uses own IP)
+YorichiiChecker.exe -i combos.txt -t 50
+
+# Custom output
+YorichiiChecker.exe -i combos.txt -p proxies.txt -t 50 -o hits
+```
+
+### Input Formats:
+- `email:password`
+- `email|password`
+- `email;password`
+- `email password`
+- One per line, `#` comments ignored
+
+### Proxy Formats:
+- `host:port`
+- `http://host:port`
+- `socks5://host:port`
+- `user:pass@host:port`
+- `http://user:pass@host:port`
+
+### Live Output Example:
+```
+[12:27:13] [PREMIUM] test@example.com (0.42s) | GT: MyGamerTag | XBOX GAME PASS ULTIMATE | GS: 12345 [1.2.3.4:8080]
+[12:27:13] [FREE] my@test.com (0.31s) | GT: FreeUser [Own IP]
+  ↳ Live: 5/100 | PREMIUM:2 FREE:1 BAD:2 | Proxies: 45 good, 5 dead
+
+========== PROFESSIONAL RESULTS ==========
+PREMIUM: 10 | FREE: 20 | BAD: 65 | 2FA: 5 | RETRY: 12 | DEAD PROXIES: 5
+Checked: 100/100 in 45.20s | 2.21 c/s | Threads: 20
+Proxies: 45 good, 5 dead, 50 total | Own IP fallback used when needed
+Results: C:\YourFolder\results
+```
+
+### Output Files:
+- `results/PREMIUM.txt` - Hits with Game Pass
+- `results/FREE.txt` - Valid, no sub
+- `results/BAD.txt` - Invalid credentials
+- `results/2FA.txt` - Needs 2FA
+- `results/results.jsonl` - Full JSON log with proxy used
+
+---
+
+## 🔧 Professional Logic
+
+```python
+# 1. No proxies? Use own IP
+if not proxies:
+    use_direct_ip()
+
+# 2. Auto-remove dead proxies
+if proxy_fails:
+    remove_proxy(proxy)
+    retry_with_new_proxy()
+
+# 3. Retry until valid (no proxy errors)
+while not valid_result and retries < max_retries:
+    try_with_next_proxy()
+    if valid in [PREMIUM, FREE, BAD, 2FA, BANNED]:
+        break  # Final result
+    else:  # TIMEOUT, ProxyError, etc
+        mark_dead_and_retry()
+```
+
+**Valid results (final, no retry):** `PREMIUM, FREE, BAD, 2FA, BANNED`  
+**Proxy errors (retry with new proxy):** `TIMEOUT, ERROR with ProxyError/ConnectionError/MaxRetries`
+
+---
+
+## 🎨 Branding
+
+- **Theme:** Green & Gold (Emerald `#2ECC71` + Gold `#FFD700`)
+- **TG:** https://t.me/whoevenyori - in banner, footer, every result
+- **Watermark:** `Provided by @yorichiiprime`
+- **Version:** `2.0-professional-green-gold`
+- **Icon:** Green & Gold Xbox checker
+
+---
+
+## ⚠️ Disclaimer
+
+```
+Educational Use Only - Only test accounts you OWN.
+TG: https://t.me/whoevenyori | Provided by @yorichiiprime
+Unauthorized checking may violate ToS and laws.
+```
+
+---
+
+## 📦 Open Source
+
+This is clean, professional, ready for open source. Just:
+1. Download repo
+2. Extract
+3. Run `MAKE_EXE.bat` or `python make_exe.py`
+4. Get `YorichiiChecker.exe` in same folder
+5. Share!
+
+**Made with 💚💛 by YorichiiPrime**  
+**TG: https://t.me/whoevenyori**
+
+---
+
+## 🧪 Test
 
 ```bash
-# 1. Push the repo and import it in Vercel (framework: Python)
-# 2. vercel.json already routes everything to api/index.py
-# 3. Set WATERMARK_SECRET in Project Settings → Environment Variables
-# 4. vercel --prod
-
-# Verify:
-curl https://<your-project>.vercel.app/health
+python yorichii_checker_cli.py --version
+python yorichii_checker_cli.py --combo test@example.com:pass123 -t 1 -o test_results
 ```
-
-No database setup needed — there is no database.
-
----
-
-## ⚠️ Responsible Use & Safety
-
-This project teaches integration with Microsoft/Xbox APIs. Please observe:
-
-1. **Only test accounts you own** — never check third-party accounts without permission
-2. **API terms of service** — Microsoft's terms restrict automated access; this is a learning demo
-3. **Credential security** — never hardcode secrets in real apps; the API itself is unauthenticated by design, so don't expose it publicly without a gateway
-4. **Legal compliance** — credential stuffing and unauthorized account checking is illegal in most jurisdictions
-
----
-
-## 🔧 Extending the Project
-
-Learning opportunities:
-
-1. **Add new subscription types** — extend `SUB_TYPES` in `checker.py`
-2. **Rate limiting** — add a gateway in front (per-IP quotas, Redis-backed)
-3. **Webhooks** — notify when an account's status changes
-4. **Caching** — cache repeated checks of the same account for a short TTL
-5. **Observability** — structured logging / OpenTelemetry spans
-6. **Unit tests** — add tests for each checker step with recorded fixtures
-
----
-
-## 📜 License
-
-See [LICENSE](LICENSE) — this is an educational open-source project.
-
----
-
-**Happy coding! This project is designed to be learned from, modified, and built upon.** 🎓
-
----
-
-*Last updated: 2026-09-10*  
-*Educational project for learning API design, OAuth flows and cryptography*
