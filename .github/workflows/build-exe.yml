@@ -1,0 +1,25 @@
+name: Build Yorichii Checker EXE - Green & Gold
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Manual button
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: |
+          pip install -r requirements.txt
+          pip install pyinstaller pillow
+      - name: Build EXE in SAME FOLDER
+        run: |
+          python -m PyInstaller --onefile --console --name YorichiiChecker --distpath . --workpath build --specpath . --icon yorichii_icon.ico --add-data "api;api" yorichii_checker_cli.py
+      - run: .\YorichiiChecker.exe --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: YorichiiChecker-Windows-Green-Gold
+          path: YorichiiChecker.exe
