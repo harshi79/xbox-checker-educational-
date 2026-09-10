@@ -1,0 +1,6 @@
+# Example combos - replace with your own (only accounts you own!)
+# Format: email:password
+test@example.com:password123
+myaccount@outlook.com:MySecurePass123
+# Lines starting with # are ignored
+
