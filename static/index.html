@@ -1,1551 +1,755 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#0b0b12">
-<meta name="description" content="Xbox Checker SaaS demonstration console — accounts, tiers, rate limits, watermarked and signed responses.">
-<meta name="referrer" content="no-referrer">
-<title>Xbox Checker SaaS</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%236366f1'/%3E%3Ctext x='16' y='23' font-size='19' text-anchor='middle' fill='white' font-family='sans-serif'%3E%F0%9F%8E%AE%3C/text%3E%3C/svg%3E">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>XBOX CHECKER — API DOCS + LIVE CONSOLE</title>
+<meta name="description" content="Educational Xbox Live subscription checker. One JSON endpoint, HMAC-signed responses, interactive docs and live console. No login, no register, no database.">
 <style>
-  :root {
-    --bg: #0b0b12;
-    --card: #15151f;
-    --card-2: #1c1c28;
-    --field: #23232f;
-    --border: #2c2c3d;
-    --border-strong: #3b3b52;
-    --accent: #6366f1;
-    --accent-2: #a855f7;
-    --text: #e4e4e7;
-    --muted: #9aa0ad;
-    --success: #22c55e;
-    --warn: #f59e0b;
-    --error: #ef4444;
-    --radius: 14px;
-    --space: 1rem;
-  }
+:root{
+  --ink:#141216;
+  --paper:#F1EDE2;
+  --white:#fffdf7;
+  --yellow:#FFD43A;
+  --pink:#FF5DA2;
+  --cyan:#59E3FF;
+  --lime:#B7F542;
+  --violet:#B9A4FF;
+  --red:#FF4747;
+  --shadow:8px 8px 0 var(--ink);
+  --shadow-sm:5px 5px 0 var(--ink);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;color:var(--ink);background:var(--paper);
+  background-image:radial-gradient(rgba(20,18,22,.13) 1.2px, transparent 1.3px);
+  background-size:22px 22px;
+  font-family:"Arial Black","Arial Bold",Arial,Helvetica,system-ui,sans-serif;
+  line-height:1.45;
+}
+::selection{background:var(--pink);color:var(--white)}
+a{color:inherit}
+code,pre,.mono{font-family:ui-monospace,"Cascadia Mono",Consolas,"JetBrains Mono",Menlo,monospace}
+.wrap{max-width:1100px;margin:0 auto;padding:0 20px}
 
-    
-    /* Proxy input styling */
-    .proxy-textarea {
-        background: var(--field);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        color: var(--text);
-        font-family: monospace;
-        font-size: 0.875rem;
-    }
-    .proxy-textarea:focus {
-        outline: 2px solid var(--accent);
-        border-color: var(--accent);
-    }
-  * { box-sizing: border-box; }
+/* ============ marquee ============ */
+.marquee{overflow:hidden;border-bottom:4px solid var(--ink);background:var(--yellow);white-space:nowrap;user-select:none}
+.marquee-track{display:inline-block;padding:9px 0;font-weight:900;font-size:14px;letter-spacing:.08em;text-transform:uppercase;animation:scroll 26s linear infinite}
+@keyframes scroll{to{transform:translateX(-50%)}}
 
-  html { -webkit-text-size-adjust: 100%; }
+/* ============ hero ============ */
+.hero{padding:64px 0 30px;display:flex;gap:40px;align-items:center;flex-wrap:wrap;justify-content:center}
+.hero-text{flex:1 1 480px;min-width:300px}
+.kicker{display:inline-block;background:var(--ink);color:var(--yellow);padding:6px 12px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;font-weight:900;transform:rotate(-1.5deg);box-shadow:var(--shadow-sm)}
+h1{
+  font-size:clamp(58px,11vw,124px);line-height:.86;margin:18px 0 14px;text-transform:uppercase;letter-spacing:-.02em;
+  text-shadow:5px 5px 0 var(--pink), 10px 10px 0 var(--ink);
+}
+.lede{font-family:Arial,system-ui,sans-serif;font-size:18px;max-width:520px;margin:0 0 20px}
+.badges{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:26px}
+.badge{border:3px solid var(--ink);box-shadow:var(--shadow-sm);padding:6px 12px;font-size:12px;font-weight:900;text-transform:uppercase;background:var(--white);transform:rotate(-1deg)}
+.badge:nth-child(even){transform:rotate(1.2deg);background:var(--cyan)}
+.cta{display:flex;gap:16px;flex-wrap:wrap}
+.api-chip{margin-top:22px;display:inline-flex;gap:10px;align-items:center;border:3px solid var(--ink);background:var(--white);box-shadow:var(--shadow-sm);padding:8px 14px;font-size:12px;font-weight:900;text-transform:uppercase}
+.dot{width:12px;height:12px;border-radius:50%;background:#999;border:2px solid var(--ink)}
+.dot.on{background:var(--lime);animation:pulse 1.6s infinite}
+.dot.off{background:var(--red)}
+@keyframes pulse{50%{transform:scale(1.25)}}
 
-  body {
-    margin: 0;
-    min-height: 100vh;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    font-size: 16px;
-    line-height: 1.6;
-    color: var(--text);
-    background-color: var(--bg);
-    background-image:
-      radial-gradient(1100px 620px at 8% -12%, rgba(99,102,241,.30) 0%, transparent 58%),
-      radial-gradient(900px 520px at 102% -6%, rgba(168,85,247,.22) 0%, transparent 55%),
-      linear-gradient(180deg, #0b0b12 0%, #0e0e17 60%, #0b0b12 100%);
-    background-attachment: fixed;
-    padding: clamp(1rem, 3vw, 2.5rem);
-    padding-bottom: calc(clamp(1rem, 3vw, 2.5rem) + env(safe-area-inset-bottom, 0px));
-    overflow-x: hidden;
-  }
+/* ============ 3D cube ============ */
+.cube-zone{perspective:900px;flex:0 0 auto;margin:20px auto}
+.cube{width:150px;height:150px;position:relative;transform-style:preserve-3d;animation:spin 14s linear infinite}
+@keyframes spin{from{transform:rotateX(-18deg) rotateY(0)}to{transform:rotateX(-18deg) rotateY(360deg)}}
+.cube i{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:64px;font-style:normal;font-weight:900;border:4px solid var(--ink);box-shadow:inset 0 0 0 6px rgba(255,255,255,.25);
+}
+.cube i:nth-child(1){background:var(--yellow);transform:translateZ(75px)}
+.cube i:nth-child(2){background:var(--pink);transform:rotateY(180deg) translateZ(75px)}
+.cube i:nth-child(3){background:var(--cyan);transform:rotateY(90deg) translateZ(75px)}
+.cube i:nth-child(4){background:var(--lime);transform:rotateY(-90deg) translateZ(75px)}
+.cube i:nth-child(5){background:var(--violet);transform:rotateX(90deg) translateZ(75px);font-size:40px}
+.cube i:nth-child(6){background:var(--red);transform:rotateX(-90deg) translateZ(75px);font-size:40px}
 
-  .container { max-width: 940px; margin: 0 auto; min-width: 0; }
+/* ============ buttons ============ */
+.btn{
+  display:inline-block;border:3px solid var(--ink);box-shadow:6px 6px 0 var(--ink);
+  font-weight:900;font-size:15px;text-transform:uppercase;letter-spacing:.04em;
+  padding:14px 22px;cursor:pointer;background:var(--white);color:var(--ink);
+  text-decoration:none;transition:transform .07s,box-shadow .07s;user-select:none;
+}
+.btn:hover{transform:translate(-2px,-2px);box-shadow:8px 8px 0 var(--ink)}
+.btn:active{transform:translate(6px,6px);box-shadow:0 0 0 var(--ink)}
+.btn:focus-visible{outline:4px dashed var(--ink);outline-offset:3px}
+.btn-pink{background:var(--pink)}
+.btn-cyan{background:var(--cyan)}
+.btn-yellow{background:var(--yellow)}
+.btn-lime{background:var(--lime)}
+.btn-violet{background:var(--violet)}
+.btn-big{font-size:19px;padding:18px 34px}
+.btn[disabled]{opacity:.6;cursor:wait;transform:none}
 
-  /* ---------- Typography ---------- */
-  h1, h2, h3 { line-height: 1.25; margin: 0; }
-  h1 {
-    font-size: clamp(1.6rem, 5vw, 2.35rem);
-    font-weight: 800;
-    letter-spacing: -.02em;
-    background: linear-gradient(100deg, #a5b4fc, #c4b5fd 45%, #f0abfc);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-  }
-  h2 { font-size: 1.15rem; color: #c7d2fe; margin-bottom: .75rem; }
-  h3 { font-size: 1rem; color: #c7d2fe; margin: 1.6rem 0 .5rem; }
-  .sub { color: var(--muted); margin: .35rem 0 1.5rem; font-size: .95rem; }
+/* ============ panels ============ */
+.panel{
+  border:4px solid var(--ink);box-shadow:var(--shadow);background:var(--white);
+  margin:54px auto;padding:34px;position:relative;
+}
+.panel h2{
+  font-size:clamp(26px,4vw,40px);text-transform:uppercase;margin:0 0 8px;letter-spacing:-.01em;
+  display:flex;align-items:center;gap:14px;
+}
+.num{
+  background:var(--ink);color:var(--white);display:inline-block;padding:4px 12px;font-size:18px;
+  transform:rotate(-2deg);box-shadow:4px 4px 0 var(--pink);
+}
+.panel .hint{font-family:Arial,system-ui,sans-serif;margin:0 0 22px;font-size:14px}
+.panel h3{
+  text-transform:uppercase;font-size:22px;margin:34px 0 12px;
+  border-bottom:4px solid var(--ink);padding-bottom:8px;display:inline-block;background:var(--cyan);padding:6px 12px;box-shadow:var(--shadow-sm)
+}
+.panel h4{font-size:15px;text-transform:uppercase;margin:22px 0 10px;letter-spacing:.06em}
 
-  /* ---------- Cards ---------- */
-  .card {
-    background: linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,0) 55%), var(--card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: clamp(1rem, 3vw, 1.5rem);
-    margin-bottom: 1.25rem;
-    box-shadow: 0 10px 34px rgba(0,0,0,.42);
-    min-width: 0;
-  }
+/* ============ console form ============ */
+label{display:block;font-weight:900;font-size:13px;text-transform:uppercase;letter-spacing:.05em;margin:0 0 18px}
+input[type=text],input[type=email],input[type=password],textarea{
+  display:block;width:100%;margin-top:8px;border:3px solid var(--ink);box-shadow:var(--shadow-sm);
+  padding:13px 14px;font-size:16px;font-family:ui-monospace,Consolas,Menlo,monospace;background:var(--paper);
+}
+input:focus-visible,textarea:focus-visible{outline:4px dashed var(--pink);outline-offset:2px}
+textarea{resize:vertical;min-height:74px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 22px}
+@media(max-width:700px){.grid2{grid-template-columns:1fr}}
+details{border:3px solid var(--ink);background:var(--paper);box-shadow:var(--shadow-sm);margin-bottom:18px}
+summary{cursor:pointer;padding:12px 14px;font-weight:900;font-size:13px;text-transform:uppercase;letter-spacing:.05em}
+details[open] summary{border-bottom:3px solid var(--ink)}
+details .inner{padding:14px}
+.form-row{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.status-pill{border:3px solid var(--ink);box-shadow:var(--shadow-sm);padding:10px 18px;font-weight:900;text-transform:uppercase;font-size:14px;background:var(--cyan)}
+.status-pill.work{background:var(--yellow);animation:pulse 1s infinite}
+.form-error{
+  border:3px solid var(--ink);background:var(--red);color:var(--white);box-shadow:var(--shadow-sm);
+  padding:14px 16px;font-weight:700;font-family:Arial,system-ui,sans-serif;margin:16px 0 0;
+}
 
-  /* ---------- Forms ---------- */
-  label {
-    display: block;
-    font-size: .8rem;
-    font-weight: 600;
-    letter-spacing: .04em;
-    text-transform: uppercase;
-    color: var(--muted);
-    margin: .85rem 0 .3rem;
-  }
-  label:first-of-type { margin-top: 0; }
+/* ============ result ============ */
+#result{margin-top:28px;border:4px solid var(--ink);box-shadow:var(--shadow);background:var(--paper)}
+#status-block{display:flex;align-items:center;gap:24px;border-bottom:4px solid var(--ink);padding:22px 26px;flex-wrap:wrap}
+#status-word{font-size:clamp(40px,7vw,72px);line-height:1;text-transform:uppercase;text-shadow:4px 4px 0 rgba(20,18,22,.9);padding:6px 18px;border:4px solid var(--ink);box-shadow:var(--shadow-sm)}
+.st-PREMIUM{background:var(--lime)} .st-FREE{background:var(--cyan)} .st-BAD{background:var(--red);color:var(--white)}
+.st-2FA{background:var(--yellow)} .st-BANNED{background:var(--violet)} .st-TIMEOUT{background:var(--yellow)}
+.st-ERROR{background:var(--pink)}
+#status-sub{font-family:Arial,system-ui,sans-serif;font-weight:700;max-width:420px}
+#result-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px;padding:24px 26px 8px}
+.stat{border:3px solid var(--ink);box-shadow:var(--shadow-sm);background:var(--white);padding:12px 14px}
+.stat .k{font-size:11px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}
+.stat .v{font-size:20px;font-weight:900;word-break:break-word}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.chip{border:3px solid var(--ink);background:var(--yellow);padding:4px 10px;font-size:12px;font-weight:900;text-transform:uppercase;box-shadow:3px 3px 0 var(--ink)}
+.sig-box{padding:6px 26px 18px;font-family:Arial,system-ui,sans-serif;font-size:13px}
+.sig-box p{margin:8px 0}
+.sig-box code{background:var(--ink);color:var(--lime);padding:3px 7px;word-break:break-all;display:inline-block;max-width:100%}
+.verify{font-weight:900;text-transform:uppercase}
+.verify.ok{color:#1c7a1c}.verify.bad{color:#b31212}.verify.skip{color:#7a6a00}
 
-  .field-row { position: relative; display: flex; align-items: stretch; gap: .4rem; }
-  .field-row input { flex: 1 1 auto; min-width: 0; }
+/* ============ flip cards ============ */
+.flips{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:22px}
+.flip{perspective:900px;height:190px;cursor:default}
+.flip-inner{position:relative;width:100%;height:100%;transform-style:preserve-3d;transition:transform .55s cubic-bezier(.2,.7,.3,1.2)}
+.flip:hover .flip-inner,.flip:focus-within .flip-inner{transform:rotateY(180deg)}
+.flip-front,.flip-back{
+  position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;
+  border:3px solid var(--ink);box-shadow:var(--shadow-sm);padding:16px;display:flex;flex-direction:column;justify-content:center;
+}
+.flip-front{font-size:24px;font-weight:900;text-transform:uppercase;text-align:center;background:var(--white)}
+.flip-back{transform:rotateY(180deg);background:var(--ink);color:var(--white);font-family:Arial,system-ui,sans-serif;font-size:13.5px;font-weight:600;line-height:1.4}
+.flip .f-tag{font-size:11px;letter-spacing:.14em;opacity:.75;text-transform:uppercase}
 
-  input, textarea, select {
-    width: 100%;
-    min-width: 0;
-    padding: .7rem .8rem;
-    font-size: 16px;              /* >=16px prevents iOS Safari focus zoom */
-    font-family: inherit;
-    line-height: 1.4;
-    color: var(--text);
-    background: var(--field);
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    transition: border-color .15s, box-shadow .15s;
-    -webkit-appearance: none;
-    appearance: none;
-  }
-  textarea { resize: vertical; min-height: 92px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 14px; }
-  input::placeholder, textarea::placeholder { color: #6b7280; }
-  input:focus, textarea:focus, select:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(99,102,241,.28);
-  }
-  input[readonly] { color: var(--muted); background: #1b1b25; cursor: default; }
-  input[type="checkbox"] { width: auto; flex: 0 0 auto; }
+/* ============ tables ============ */
+table{width:100%;border-collapse:collapse;font-family:Arial,system-ui,sans-serif;font-size:14px;margin:12px 0}
+th,td{border:3px solid var(--ink);padding:10px 12px;text-align:left;vertical-align:top}
+th{background:var(--yellow);text-transform:uppercase;font-size:12px;letter-spacing:.06em}
+tbody tr:nth-child(even){background:var(--paper)}
+td code{background:var(--ink);color:var(--cyan);padding:1px 6px}
 
-  .hint { font-size: .78rem; color: var(--muted); margin: .3rem 0 0; }
-  .row-inline { display: flex; align-items: center; gap: .5rem; margin-top: .6rem; font-size: .85rem; color: var(--muted); }
-  .row-inline input { margin: 0; }
+/* ============ code blocks ============ */
+.codeblock{position:relative;margin:14px 0}
+pre{
+  background:var(--ink);color:var(--white);border:3px solid var(--ink);box-shadow:var(--shadow-sm);
+  padding:18px;overflow-x:auto;font-size:13.5px;line-height:1.55;margin:0;
+}
+pre .c{color:var(--cyan)} pre .k{color:var(--pink)} pre .s{color:var(--lime)}
+.copybtn{
+  position:absolute;top:10px;right:10px;border:2px solid var(--white);background:var(--ink);color:var(--white);
+  font-weight:900;font-size:11px;padding:6px 10px;cursor:pointer;text-transform:uppercase;letter-spacing:.05em;
+}
+.copybtn:hover{background:var(--pink)}
 
-  /* ---------- Buttons ---------- */
-  button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: .45rem;
-    width: 100%;
-    padding: .7rem 1rem;
-    margin: .5rem 0 0;
-    font-family: inherit;
-    font-size: .95rem;
-    font-weight: 650;
-    color: #fff;
-    background: linear-gradient(135deg, var(--accent), var(--accent-2));
-    border: 1px solid transparent;
-    border-radius: 9px;
-    cursor: pointer;
-    transition: filter .15s, transform .06s, opacity .15s;
-  }
-  button:hover:not(:disabled) { filter: brightness(1.12); }
-  button:active:not(:disabled) { transform: translateY(1px); }
-  button:disabled { opacity: .55; cursor: not-allowed; }
-  button.secondary { background: #2b2b3a; border-color: var(--border-strong); color: var(--text); }
-  button.danger { background: linear-gradient(135deg, #b91c1c, #ef4444); }
-  button.ghost { background: transparent; border-color: var(--border-strong); color: var(--muted); font-weight: 600; }
-  button.ghost:hover:not(:disabled) { color: var(--text); border-color: var(--accent); }
-  button.tiny { width: auto; padding: .32rem .6rem; margin: 0; font-size: .76rem; border-radius: 7px; }
+/* ============ steps ============ */
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:22px}
+.step{border:3px solid var(--ink);box-shadow:var(--shadow-sm);background:var(--white);padding:16px;position:relative;transform:rotate(-.6deg)}
+.step:nth-child(even){transform:rotate(.7deg)}
+.step .s-num{position:absolute;top:-16px;left:-12px;background:var(--ink);color:var(--yellow);font-weight:900;padding:6px 12px;border:3px solid var(--ink);box-shadow:3px 3px 0 var(--pink)}
+.step h5{margin:10px 0 6px;font-size:15px;text-transform:uppercase}
+.step p{margin:0;font-family:Arial,system-ui,sans-serif;font-size:13px}
 
-  :where(button, a, input, textarea, [tabindex]):focus-visible {
-    outline: 2px solid #a5b4fc;
-    outline-offset: 2px;
-  }
+/* ============ danger ============ */
+.panel-danger{background:var(--red);color:var(--white)}
+.panel-danger h2 .num{background:var(--white);color:var(--red);box-shadow:4px 4px 0 var(--ink)}
+.panel-danger ul{font-family:Arial,system-ui,sans-serif;font-weight:700}
+.panel-danger li{margin:10px 0}
 
-  .btn-row { display: flex; flex-wrap: wrap; gap: .5rem; }
-  .btn-row button { flex: 1 1 180px; width: auto; }
+/* ============ footer ============ */
+footer{border-top:4px solid var(--ink);background:var(--ink);color:var(--paper);margin-top:70px;padding:26px 0;text-align:center;font-size:13px;font-family:Arial,system-ui,sans-serif}
+footer b{color:var(--yellow)}
 
-  /* ---------- Tabs ---------- */
-  .tabs { display: flex; gap: .35rem; background: #101018; border: 1px solid var(--border); padding: .3rem; border-radius: 10px; margin-bottom: 1rem; }
-  .tabs button {
-    flex: 1 1 0;
-    margin: 0;
-    padding: .5rem;
-    background: transparent;
-    color: var(--muted);
-    border: none;
-    border-radius: 7px;
-    font-size: .9rem;
-  }
-  .tabs button[aria-selected="true"] { background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: #fff; }
-
-  /* ---------- Status / messages ---------- */
-  .status {
-    padding: .65rem .8rem;
-    border-radius: 8px;
-    margin: .8rem 0 0;
-    font-size: .9rem;
-    border: 1px solid transparent;
-    overflow-wrap: anywhere;
-  }
-  .status:empty { display: none; }
-  .status.success { background: rgba(34,197,94,.13); border-color: rgba(34,197,94,.4); color: #86efac; }
-  .status.error   { background: rgba(239,68,68,.13); border-color: rgba(239,68,68,.42); color: #fca5a5; }
-  .status.warn    { background: rgba(245,158,11,.13); border-color: rgba(245,158,11,.4); color: #fcd34d; }
-  .status.info    { background: rgba(99,102,241,.14); border-color: rgba(99,102,241,.4); color: #c7d2fe; }
-
-  /* ---------- Dashboard ---------- */
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: .9rem; }
-  .cell { background: var(--card-2); border: 1px solid var(--border); border-radius: 10px; padding: .8rem .9rem; min-width: 0; }
-  .cell .k { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
-  .cell .v { font-size: .98rem; margin-top: .3rem; overflow-wrap: anywhere; word-break: break-word; }
-
-  code, .mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-    font-size: .84rem;
-    overflow-wrap: anywhere;
-    word-break: break-all;
-  }
-  .key-wrap { display: flex; align-items: flex-start; gap: .5rem; margin-top: .3rem; }
-  .key-wrap code { flex: 1 1 auto; min-width: 0; }
-
-  .badge {
-    display: inline-block;
-    padding: .22rem .6rem;
-    border-radius: 999px;
-    font-size: .78rem;
-    font-weight: 700;
-    letter-spacing: .06em;
-    text-transform: uppercase;
-    background: #333;
-    color: #fff;
-  }
-  .badge.free    { background: #334155; color: #e2e8f0; }
-  .badge.premium { background: linear-gradient(135deg, #6366f1, #a855f7); }
-  .badge.pro     { background: linear-gradient(135deg, #f59e0b, #ef4444); }
-  .badge.unknown { background: #3f3f46; color: #d4d4d8; }
-
-  .meter { height: 8px; background: #2a2a3a; border-radius: 999px; overflow: hidden; margin-top: .5rem; }
-  .meter > span { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #22c55e, #f59e0b 70%, #ef4444); transition: width .4s ease; }
-
-  .confirm-box { margin-top: .7rem; padding: .8rem; border: 1px dashed rgba(239,68,68,.55); border-radius: 10px; background: rgba(239,68,68,.08); }
-  .confirm-box p { margin: 0 0 .5rem; font-size: .88rem; color: #fecaca; }
-
-  /* ---------- Results ---------- */
-  .result { margin-top: 1rem; }
-  .result:empty { display: none; }
-  .kv { display: grid; grid-template-columns: max-content 1fr; gap: .3rem .9rem; font-size: .9rem; margin-bottom: .8rem; min-width: 0; }
-  .kv dt { color: var(--muted); font-weight: 600; }
-  .kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-
-  pre {
-    background: #08080d;
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    padding: .85rem;
-    margin: 0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: .8rem;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-    max-height: 340px;
-    overflow-y: auto;
-  }
-
-  .pill { display: inline-flex; align-items: center; gap: .35rem; padding: .18rem .55rem; border-radius: 999px; font-size: .8rem; font-weight: 700; }
-  .pill.ok   { background: rgba(34,197,94,.16); color: #86efac; border: 1px solid rgba(34,197,94,.45); }
-  .pill.bad  { background: rgba(239,68,68,.16); color: #fca5a5; border: 1px solid rgba(239,68,68,.45); }
-  .pill.na   { background: rgba(148,163,184,.16); color: #cbd5e1; border: 1px solid rgba(148,163,184,.4); }
-
-  /* ---------- Admin table ---------- */
-  .table-scroll { overflow-x: auto; margin-top: .8rem; border: 1px solid var(--border); border-radius: 10px; -webkit-overflow-scrolling: touch; }
-  table { border-collapse: collapse; width: 100%; font-size: .84rem; }
-  caption { text-align: left; padding: .6rem .8rem; color: var(--muted); font-size: .82rem; }
-  th, td { padding: .55rem .7rem; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
-  thead th { background: #101018; position: sticky; top: 0; font-size: .74rem; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
-  tbody tr:last-child td { border-bottom: none; }
-  tbody tr:hover { background: rgba(99,102,241,.07); }
-  td.email { white-space: normal; overflow-wrap: anywhere; }
-
-  /* ---------- Spinner ---------- */
-  .spin { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: sp .7s linear infinite; }
-  @keyframes sp { to { transform: rotate(360deg); } }
-
-  /* ---------- Misc ---------- */
-  .hidden { display: none !important; }
-  .divider { height: 1px; background: var(--border); margin: 1.4rem 0; border: 0; }
-  .watermark { color: #a5b4fc; font-weight: 700; }
-  footer { text-align: center; padding: 1.6rem .5rem 1rem; color: #6b7280; font-size: .85rem; }
-  footer a { color: #6b7280; }
-  .admin-trigger { background: none; border: none; padding: 0; margin: 0; width: auto; color: #565b66; font-size: .8rem; font-weight: 600; cursor: pointer; text-decoration: underline dotted; }
-  .admin-trigger:hover { color: #a5b4fc; }
-  .notice {
-    background: rgba(245,158,11,.10);
-    border: 1px solid rgba(245,158,11,.38);
-    color: #fcd34d;
-    border-radius: 10px;
-    padding: .6rem .85rem;
-    font-size: .85rem;
-    margin: 0 0 1.25rem;
-  }
-  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-  .noscript { background: rgba(239,68,68,.14); border: 1px solid rgba(239,68,68,.45); color: #fca5a5; padding: .8rem 1rem; border-radius: 10px; margin-bottom: 1rem; }
-
-  /* ---------- Toasts ---------- */
-  #toasts { position: fixed; right: 1rem; bottom: 1rem; display: flex; flex-direction: column; gap: .5rem; z-index: 50; max-width: min(92vw, 340px); }
-  .toast { background: #1f1f2c; border: 1px solid var(--border-strong); border-left: 3px solid var(--accent); border-radius: 9px; padding: .6rem .8rem; font-size: .85rem; box-shadow: 0 8px 24px rgba(0,0,0,.5); animation: rise .18s ease-out; overflow-wrap: anywhere; }
-  .toast.success { border-left-color: var(--success); }
-  .toast.error { border-left-color: var(--error); }
-  @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
-
-  /* ---------- Responsive ---------- */
-  @media (max-width: 640px) {
-    .grid { grid-template-columns: 1fr; }
-    .kv { grid-template-columns: 1fr; gap: .15rem; }
-    .kv dt { margin-top: .5rem; }
-    .btn-row button { flex: 1 1 100%; }
-    pre { max-height: 260px; }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
-  }
+@media (prefers-reduced-motion: reduce){
+  .cube,.marquee-track,.dot.on,.status-pill.work{animation:none !important}
+  .flip-inner{transition:none}
+  html{scroll-behavior:auto}
+}
 </style>
 </head>
 <body>
-<div class="container">
 
-  <header>
-    <h1>🎮 Xbox Checker</h1>
-    <p class="sub">Check Xbox &amp; Microsoft account Game Pass and subscription status — register, manage your API key, and run watermarked, signed checks.</p>
-    <div class="notice" role="note">🔒 Educational project — only check accounts you own or are explicitly authorised to test.</div>
-  </header>
-
-  <noscript>
-    <div class="noscript"><strong>JavaScript is required.</strong> This console needs JavaScript enabled to authenticate and run checks.</div>
-  </noscript>
-
-  <!-- ============ AUTH ============ -->
-  <section id="auth-section" class="card" aria-labelledby="auth-heading">
-    <h2 id="auth-heading">Get Started</h2>
-
-    <div class="tabs" role="tablist" aria-label="Authentication mode">
-      <button type="button" id="tab-register" role="tab" aria-selected="true" aria-controls="register-form">Register</button>
-      <button type="button" id="tab-login" role="tab" aria-selected="false" aria-controls="login-form">Login</button>
-    </div>
-
-    <form id="register-form" novalidate>
-      <label for="reg-email">Email</label>
-      <input type="email" id="reg-email" name="email" placeholder="you@example.com" autocomplete="email" inputmode="email" required>
-
-      <label for="reg-pass">Password <span class="hint" style="text-transform:none;letter-spacing:0">(min 8 characters)</span></label>
-      <input type="password" id="reg-pass" name="password" placeholder="At least 8 characters" autocomplete="new-password" minlength="8" required>
-
-      <label for="reg-fp">Device Fingerprint <span class="hint" style="text-transform:none;letter-spacing:0">(auto-generated)</span></label>
-      <div class="field-row">
-        <input type="text" id="reg-fp" name="device_fingerprint" readonly aria-describedby="fp-hint">
-        <button type="button" class="secondary tiny" id="fp-refresh" title="Regenerate fingerprint">↻</button>
-      </div>
-      <p class="hint" id="fp-hint">Canvas + screen + user-agent hash. One account per device.</p>
-
-      <button type="submit" id="btn-register">Create Account</button>
-    </form>
-
-    <form id="login-form" class="hidden" novalidate>
-      <label for="login-email">Email</label>
-      <input type="email" id="login-email" name="email" placeholder="you@example.com" autocomplete="email" inputmode="email" required>
-
-      <label for="login-pass">Password</label>
-      <input type="password" id="login-pass" name="password" placeholder="Your password" autocomplete="current-password" required>
-
-      <button type="submit" id="btn-login">Login</button>
-    </form>
-
-    <div id="auth-msg" role="status" aria-live="polite"></div>
-  </section>
-
-  <!-- ============ DASHBOARD ============ -->
-  <section id="dashboard" class="card hidden" aria-labelledby="dash-heading">
-    <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between">
-      <h2 id="dash-heading" style="margin:0">Dashboard</h2>
-      <button type="button" class="ghost tiny" id="btn-logout">Sign out</button>
-    </div>
-
-    <div id="dash-msg" role="status" aria-live="polite"></div>
-
-    <div class="grid" style="margin-top:1rem">
-      <div class="cell" style="grid-column:1/-1">
-        <div class="k">API Key</div>
-        <div class="key-wrap">
-          <code id="api-key">—</code>
-          <button type="button" class="secondary tiny" id="btn-copy-key">Copy</button>
-        </div>
-      </div>
-
-      <div class="cell">
-        <div class="k">Tier</div>
-        <div class="v"><span id="tier-badge" class="badge unknown">—</span></div>
-      </div>
-
-      <div class="cell">
-        <div class="k">Usage today</div>
-        <div class="v"><span id="usage">—</span></div>
-        <div class="meter" aria-hidden="true"><span id="usage-bar"></span></div>
-      </div>
-    </div>
-
-    <div class="btn-row" style="margin-top:1rem">
-      <button type="button" class="secondary" id="btn-revoke">🔄 Regenerate API Key</button>
-      <button type="button" class="ghost" id="btn-refresh">↻ Refresh</button>
-    </div>
-
-    <div id="revoke-confirm" class="confirm-box hidden" role="alertdialog" aria-labelledby="revoke-title">
-      <p id="revoke-title">Regenerate your API key? Your <strong>current key stops working immediately</strong> and anything using it will break.</p>
-      <div class="btn-row">
-        <button type="button" class="danger" id="btn-revoke-yes">Yes, regenerate</button>
-        <button type="button" class="secondary" id="btn-revoke-no">Cancel</button>
-      </div>
-    </div>
-
-    <hr class="divider">
-
-    <h3>Test Check</h3>
-
-    <form id="check-form" novalidate>
-      <label for="check-email">Account Email</label>
-      <input type="text" id="check-email" placeholder="account@example.com" autocomplete="off" spellcheck="false" required>
-
-      <label for="check-pass">Account Password</label>
-      <div class="field-row">
-        <input type="password" id="check-pass" placeholder="Account password" autocomplete="off" required>
-        <button type="button" class="secondary tiny" id="btn-eye" aria-label="Show password">👁</button>
-      </div>
-
-      <label for="check-proxies">Proxies <span class="hint" style="text-transform:none;letter-spacing:0">(one per line, optional)</span><p class="hint small">Supported formats: <code>host:port</code>, <code>http://host:port</code>, <code>socks5://host:port</code>, <code>user:pass@host:port</code></p>
-      <textarea id="check-proxies" class="proxy-textarea" rows="4" placeholder="http://user:pass@host:port&#10;socks5://host:port"></textarea>
-      <p class="hint" id="proxy-count">0 proxies queued</p>
-
-      <button type="submit" id="btn-check">🔍 Run Check</button>
-    </form>
-
-    <div id="result" class="result" role="status" aria-live="polite"></div>
-  </section>
-
-  <!-- ============ ADMIN (hidden until unlocked) ============ -->
-  <section id="admin-section" class="card hidden" aria-labelledby="admin-heading">
-  <div class="admin-tabs" role="tablist" aria-label="Admin tabs">
-    <div class="admin-tab" role="tab" aria-controls="admin-users" hidden>Users</div>
-    <div class="admin-tab active" role="tab" aria-controls="admin-status">Status</div>
-    <div class="admin-tab" role="tab" aria-controls="admin-users">Users</div>
-  </div>
-
-    <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;justify-content:space-between">
-      <h2 id="admin-heading" style="margin:0">🔐 Admin Panel</h2>
-      <button type="button" class="ghost tiny" id="btn-admin-close">Hide</button>
-    </div>
-
-    <form id="admin-form" novalidate>
-      <label for="admin-key">Admin API Key</label>
-      <input type="password" id="admin-key" placeholder="X-Admin-Key" autocomplete="off">
-      
-    <div class="admin-tab" id="admin-tab-status" role="tab" aria-controls="admin-status" hidden>
-      <span>Status</span>
-    </div>
-    <div class="admin-tab-content" id="admin-status" hidden>
-      <div class="loading" id="admin-status-loading">Loading...</div>
-      <div id="admin-status-content"></div>
-    </div>
-<button type="submit" id="btn-admin">Load Users</button>
-    </form>
-
-    <div id="admin-msg" role="status" aria-live="polite"></div>
-    <div id="admin-output" class="result"></div>
-  </section>
-
-  <footer>
-    <span class="watermark">Provided by @yorichiiprime</span> · All checks logged · Use responsibly<br>
-    <button type="button" class="admin-trigger" id="admin-trigger">Admin</button>
-    <span class="hint" style="display:inline"> · Ctrl/⌘ + Shift + A</span>
-  </footer>
+<div class="marquee" aria-hidden="true">
+  <span class="marquee-track" id="marquee"></span>
 </div>
 
-<div id="toasts" aria-live="polite"></div>
+<header class="hero wrap">
+  <div class="hero-text">
+    <span class="kicker">Educational project · API + docs only</span>
+    <h1>Xbox<br>Checker</h1>
+    <p class="lede">One JSON endpoint that checks Xbox Live subscriptions
+      (Game Pass, Gold, Microsoft 365…) and reports gamertag + gamerscore.
+      <strong>No login. No register. No database.</strong> Every response is
+      HMAC-SHA256 signed.</p>
+    <div class="badges">
+      <span class="badge">FastAPI</span>
+      <span class="badge">OAuth 2.0</span>
+      <span class="badge">HMAC-SHA256</span>
+      <span class="badge">Pydantic</span>
+      <span class="badge">No auth required</span>
+    </div>
+    <div class="cta">
+      <a class="btn btn-pink" href="#console">▶ Try the console</a>
+      <a class="btn btn-cyan" href="/docs">Open Swagger → /docs</a>
+      <a class="btn" href="/health">Health</a>
+    </div>
+    <div class="api-chip" id="api-chip"><span class="dot" id="api-dot"></span><span id="api-chip-text">CHECKING API…</span></div>
+  </div>
+  <div class="cube-zone" aria-hidden="true">
+    <div class="cube"><i>X</i><i>O</i><i>B</i><i>X</i><i>✦</i><i>API</i></div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ================= 01 CONSOLE ================= -->
+  <section class="panel" id="console">
+    <h2><span class="num">01</span> Live console</h2>
+    <p class="hint">This form calls <b>POST /check</b> on this same server. Credentials are sent only to this deployment —
+    use only an account you own or are explicitly authorised to test.</p>
+
+    <form id="check-form" autocomplete="off">
+      <div class="grid2">
+        <label for="f-email">Microsoft email
+          <input id="f-email" type="email" required maxlength="320" placeholder="you@example.com" spellcheck="false">
+        </label>
+        <label for="f-pass">Password
+          <input id="f-pass" type="password" required maxlength="512" placeholder="••••••••">
+        </label>
+      </div>
+      <label for="f-proxies">Proxies — optional, one per line (max 20)
+        <textarea id="f-proxies" rows="3" spellcheck="false"
+          placeholder="1.2.3.4:8080&#10;user:pass:5.6.7.8:3128&#10;http://9.9.9.9:3128"></textarea>
+      </label>
+      <details>
+        <summary>Advanced — signature secret</summary>
+        <div class="inner">
+          <label for="f-secret">WATERMARK_SECRET (used to verify the HMAC signature locally)
+            <input id="f-secret" type="text" value="dev-secret-change-in-prod" spellcheck="false">
+          </label>
+        </div>
+      </details>
+      <div class="form-row">
+        <button class="btn btn-yellow btn-big" type="submit" id="check-btn">⚡ Run check</button>
+        <span class="status-pill work" id="check-status" role="status" hidden>RUNNING…</span>
+      </div>
+      <p class="form-error" id="form-error" role="alert" hidden></p>
+    </form>
+
+    <div id="result" hidden>
+      <div id="status-block">
+        <span id="status-word">…</span>
+        <span id="status-sub"></span>
+      </div>
+      <div id="result-grid"></div>
+      <div class="sig-box">
+        <p>Watermark: <code id="out-watermark"></code></p>
+        <p>Signature: <code id="out-signature"></code>
+          <button type="button" class="copybtn" id="copy-sig" style="position:static;margin-left:8px">Copy</button>
+        </p>
+        <p class="verify" id="verify-line"></p>
+      </div>
+      <div class="form-row" style="padding:0 26px 22px">
+        <button type="button" class="btn btn-lime" id="copy-json">Copy response JSON</button>
+        <button type="button" class="btn btn-violet" id="copy-curl">Copy as cURL</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 02 HOW IT WORKS ================= -->
+  <section class="panel" id="how">
+    <h2><span class="num">02</span> How a check works</h2>
+    <p class="hint">The real token chain, walked by <code>api/checker.py</code>:</p>
+    <div class="steps">
+      <div class="step"><span class="s-num">1</span>
+        <h5>Microsoft login</h5>
+        <p>GET <code>login.live.com/oauth20_authorize.srf</code>, parse the
+        <code>PPFT</code> token + <code>urlPost</code>, POST the credentials.</p>
+      </div>
+      <div class="step"><span class="s-num">2</span>
+        <h5>Token exchange</h5>
+        <p>Microsoft returns an <code>access_token</code> (RPS ticket) in the
+        OAuth redirect fragment. Wrong password → <b>BAD</b>, 2FA page → <b>2FA</b>.</p>
+      </div>
+      <div class="step"><span class="s-num">3</span>
+        <h5>Xbox → XSTS auth</h5>
+        <p>RPS ticket → <code>user.auth.xboxlive.com</code> → XBL JWT →
+        <code>xsts.auth.xboxlive.com</code> → XSTS token. XErr 2148916229 → <b>BANNED</b>.</p>
+      </div>
+      <div class="step"><span class="s-num">4</span>
+        <h5>Probe &amp; report</h5>
+        <p>Profile (gamertag/gamerscore), subscriptions API, store purchases,
+        Minecraft entitlements, Microsoft account services → <b>PREMIUM</b> or <b>FREE</b>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 03 API REFERENCE ================= -->
+  <section class="panel" id="endpoints">
+    <h2><span class="num">03</span> API reference</h2>
+
+    <h3>POST /check</h3>
+    <p style="font-family:Arial,system-ui,sans-serif;font-size:14px">Check a Microsoft/Xbox account for active subscriptions.
+    <b>No authentication headers required.</b></p>
+
+    <h4>Request body</h4>
+    <table>
+      <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><code>email</code></td><td>string, 1–320</td><td>Microsoft account email</td></tr>
+        <tr><td><code>password</code></td><td>string, 1–512</td><td>Microsoft account password</td></tr>
+        <tr><td><code>proxies</code></td><td>string[] · optional · max 20</td><td>See <a href="#proxies">proxy formats</a>. Omit for a direct connection.</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Example</h4>
+    <div class="codeblock"><button type="button" class="copybtn">Copy</button>
+<pre>curl -s <span class="s">http://localhost:8000/check</span> \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  -d <span class="s">'{"email": "you@example.com", "password": "your-password"}'</span></pre>
+    </div>
+
+    <h4>Response <span style="font-size:13px">(200)</span></h4>
+    <div class="codeblock"><button type="button" class="copybtn">Copy</button>
+<pre>{
+  <span class="k">"status"</span>: <span class="s">"PREMIUM"</span>,
+  <span class="k">"duration"</span>: 4.21,
+  <span class="k">"data"</span>: {
+    <span class="k">"gamertag"</span>: <span class="s">"YourGamertag"</span>,
+    <span class="k">"gamerscore"</span>: 12345,
+    <span class="k">"subscriptions"</span>: [<span class="s">"XBOX GAME PASS ULTIMATE"</span>],
+    <span class="k">"gamepass"</span>: <span class="s">"XBOX GAME PASS ULTIMATE"</span>
+  },
+  <span class="k">"watermark"</span>: <span class="s">"Provided by @yorichiiprime"</span>,
+  <span class="k">"signature"</span>: <span class="s">"&lt;64 hex chars — HMAC-SHA256&gt;"</span>
+}</pre>
+    </div>
+
+    <h4>Status values <span style="font-size:12px">(hover / tap to flip)</span></h4>
+    <div class="flips">
+      <div class="flip" tabindex="0"><div class="flip-inner">
+        <div class="flip-front st-PREMIUM">PREMIUM</div>
+        <div class="flip-back"><span class="f-tag">status</span><br>Active subscription found. See <code style="color:var(--lime)">data.gamepass</code> + <code style="color:var(--lime)">data.subscriptions</code>.</div>
+      </div></div>
+      <div class="flip" tabindex="0"><div class="flip-inner">
+        <div class="flip-front st-FREE">FREE</div>
+        <div class="flip-back"><span class="f-tag">status</span><br>Account valid, no active subscription. Gamertag + gamerscore still reported.</div>
+      </div></div>
+      <div class="flip" tabindex="0"><div class="flip-inner">
+        <div class="flip-front st-BAD">BAD</div>
+        <div class="flip-back"><span class="f-tag">status</span><br>Credentials rejected — wrong password or account does not exist.</div>
+      </div></div>
+      <div class="flip" tabindex="0"><div class="flip-inner">
+        <div class="flip-front st-2FA">2FA</div>
+        <div class="flip-back"><span class="f-tag">status</span><br>Account requires two-step verification. Cannot proceed without the code.</div>
+      </div></div>
+      <div class="flip" tabindex="0"><div class="flip-inner">
+        <div class="flip-front st-BANNED">BANNED</div>
+        <div class="flip-back"><span class="f-tag">status</span><br>Account suspended or banned (login redirect or XSTS XErr 2148916229).</div>
+      </div></div>
+      <div class="flip" tabindex="0"><div class="flip-inner">
+        <div class="flip-front st-TIMEOUT">TIMEOUT</div>
+        <div class="flip-back"><span class="f-tag">status</span><br>Upstream request timed out. <code style="color:var(--lime)">error</code> has details.</div>
+      </div></div>
+      <div class="flip" tabindex="0"><div class="flip-inner">
+        <div class="flip-front st-ERROR">ERROR</div>
+        <div class="flip-back"><span class="f-tag">status</span><br>Something failed inside the checker. <code style="color:var(--lime)">error</code> has details.</div>
+      </div></div>
+    </div>
+
+    <h4>HTTP error codes</h4>
+    <table>
+      <thead><tr><th>Code</th><th>When</th></tr></thead>
+      <tbody>
+        <tr><td><code>400</code></td><td>Email/password empty after trimming</td></tr>
+        <tr><td><code>413</code></td><td>More than 20 proxies supplied</td></tr>
+        <tr><td><code>422</code></td><td>Invalid request body (Pydantic validation — message in <code>detail</code>)</td></tr>
+        <tr><td><code>500</code></td><td>Unhandled internal error (generic JSON, no stack trace)</td></tr>
+      </tbody>
+    </table>
+
+    <h3>GET /health</h3>
+    <div class="codeblock"><button type="button" class="copybtn">Copy</button>
+<pre>{ <span class="k">"status"</span>: <span class="s">"ok"</span>, <span class="k">"version"</span>: <span class="s">"2.0.0"</span>, <span class="k">"timestamp"</span>: <span class="s">"2026-09-10T12:00:00+00:00"</span> }</pre>
+    </div>
+
+    <h3>GET /docs · GET /openapi.json</h3>
+    <p style="font-family:Arial,system-ui,sans-serif;font-size:14px">Interactive Swagger UI and the raw OpenAPI 3.1 schema,
+    auto-generated from the Pydantic models in <code>api/index.py</code>. <a href="/docs">Open /docs →</a></p>
+
+    <h3>GET /</h3>
+    <p style="font-family:Arial,system-ui,sans-serif;font-size:14px">This page — docs + live console.</p>
+  </section>
+
+  <!-- ================= 04 PROXIES ================= -->
+  <section class="panel" id="proxies">
+    <h2><span class="num">04</span> Proxies</h2>
+    <p class="hint">Optional. Max <b>20</b> per request (413 above that). The pool rotates per request; failing proxies are marked bad and skipped.</p>
+    <table>
+      <thead><tr><th>Format</th><th>Example</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Plain</td><td><code>1.2.3.4:8080</code></td><td>Most common</td></tr>
+        <tr><td>With scheme</td><td><code>http://5.6.7.8:3128</code></td><td>Scheme is stripped, request goes over http proxy</td></tr>
+        <tr><td>User:pass:ip:port</td><td><code>user:pass:9.9.9.9:1080</code></td><td>Classic 4-part format (host:port used)</td></tr>
+        <tr><td>user:pass@host:port</td><td><code>user:pass@10.0.0.1:1080</code></td><td>Credentials kept in the proxy URL</td></tr>
+        <tr><td>Socks prefix</td><td><code>socks5://10.0.0.1:1080</code></td><td>Prefix stripped, treated as http proxy (educational limitation)</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ================= 05 SIGNING ================= -->
+  <section class="panel" id="signing">
+    <h2><span class="num">05</span> Signature verification</h2>
+    <p class="hint">Every <b>/check</b> response carries <code>watermark</code> + <code>signature</code> —
+    HMAC-SHA256 over the canonical JSON of the payload (keys sorted, compact separators,
+    <code>signature</code> excluded). Anyone holding the server’s <code>WATERMARK_SECRET</code>
+    can prove the response wasn’t tampered with. The console above verifies it live in your
+    browser with Web Crypto.</p>
+    <div class="codeblock"><button type="button" class="copybtn">Copy</button>
+<pre><span class="c"># verify a signed response (Python, stdlib only)</span>
+<span class="k">import</span> hashlib, hmac, json
+
+<span class="k">def</span> verify(payload: dict, secret: str) -> bool:
+    provided = payload.pop(<span class="s">"signature"</span>, <span class="k">None</span>)
+    expected = hmac.new(
+        secret.encode(),
+        json.dumps(payload, sort_keys=<span class="k">True</span>, separators=(<span class="s">","</span>, <span class="s">":"</span>)).encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    <span class="k">return</span> hmac.compare_digest(provided <span class="k">or</span> <span class="s">""</span>, expected)
+
+<span class="c"># verify(response_json, <span class="s">"your-watermark-secret"</span>)  ->  True</span></pre>
+    </div>
+  </section>
+
+  <!-- ================= 06 QUICKSTART ================= -->
+  <section class="panel" id="quickstart">
+    <h2><span class="num">06</span> Quickstart</h2>
+    <div class="steps">
+      <div class="step"><span class="s-num">1</span>
+        <h5>Clone &amp; venv</h5>
+        <p><code>git clone &lt;repo&gt; &amp;&amp; cd xbox-checker-educational</code><br>
+        <code>python3 -m venv .venv &amp;&amp; source .venv/bin/activate</code></p>
+      </div>
+      <div class="step"><span class="s-num">2</span>
+        <h5>Install</h5>
+        <p><code>pip install -r requirements.txt</code><br>
+        Optional: <code>cp .env.example .env</code> to set your signing secret.</p>
+      </div>
+      <div class="step"><span class="s-num">3</span>
+        <h5>Run</h5>
+        <p><code>uvicorn api.index:app --reload</code><br>
+        Console: <b>localhost:8000</b> · Docs: <b>localhost:8000/docs</b></p>
+      </div>
+      <div class="step"><span class="s-num">4</span>
+        <h5>Test / deploy</h5>
+        <p><code>python3 qa-backend.test.py</code><br>
+        Vercel: import the repo, set <code>WATERMARK_SECRET</code>, deploy. <code>vercel.json</code> is ready.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 07 RESPONSIBLE USE ================= -->
+  <section class="panel panel-danger" id="responsible">
+    <h2><span class="num">07</span> Responsible use</h2>
+    <ul>
+      <li>⚠️ <b>Educational use only.</b> Only check accounts you own or are explicitly authorised to test.</li>
+      <li>⚠️ Microsoft’s terms restrict automated access — this is a learning demo, not a product.</li>
+      <li>⚠️ The API has <b>no authentication by design</b>. Don’t expose it publicly without a gateway (rate limiting / API keys).</li>
+      <li>⚠️ Credential stuffing and unauthorised account checking is illegal in most jurisdictions.</li>
+    </ul>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <b>XBOX CHECKER</b> · educational API project · FastAPI · OAuth 2.0 · HMAC-SHA256<br>
+    <span style="opacity:.8">Provided by @yorichiiprime · <span id="year"></span> · built with pure HTML/CSS/JS — no frameworks</span>
+  </div>
+</footer>
 
 <script>
+/* ===== SIGNATURE CORE (pure functions — mirrored in qa-signature.test.mjs) ===== */
+/* Must byte-match Python: json.dumps(payload, sort_keys=True, separators=(",",":")) */
+function _canon(v) {
+  if (v === null || v === undefined) return 'null';
+  if (Array.isArray(v)) return '[' + v.map(_canon).join(',') + ']';
+  if (typeof v === 'object') {
+    const keys = Object.keys(v).sort();
+    return '{' + keys.map(k => JSON.stringify(k) + ':' + _canon(v[k])).join(',') + '}';
+  }
+  return JSON.stringify(v);
+}
+function _toAscii(s) {
+  // Python json.dumps uses ensure_ascii=True: non-ASCII -> \uXXXX (surrogate halves individually)
+  return s.replace(/[\u0080-\uFFFF]/g, ch => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'));
+}
+function canonJson(v) {
+  return _toAscii(_canon(v));
+}
+function signablePayload(payload) {
+  const s = Object.assign({}, payload || {});
+  delete s.signature;
+  return s;
+}
+function canonCandidates(payload) {
+  const base = canonJson(signablePayload(payload));
+  const out = [base];
+  // Python serialises integral floats as "4.0"; JS JSON gives "4". Try the fix as a 2nd candidate.
+  if (typeof (payload && payload.duration) === 'number' && Number.isInteger(payload.duration)) {
+    const fixed = base.replace(/"duration":(-?\d+)/, '"duration":$1.0');
+    if (fixed !== base) out.push(fixed);
+  }
+  return out;
+}
+async function verifySignature(payload, secret) {
+  const provided = payload && payload.signature;
+  if (!provided || !secret) return false;
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  for (const msg of canonCandidates(payload)) {
+    const sig = await crypto.subtle.sign('HMAC', key, enc.encode(msg));
+    const hex = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+    if (hex === provided) return true;
+  }
+  return false;
+}
+/* ===== END SIGNATURE CORE ===== */
+
+/* ===== marquee ===== */
 (function () {
-  'use strict';
-
-  /* =========================================================
-     Configuration (frontend only)
-     ========================================================= */
-  var API_BASE = '';                       // same-origin; set an absolute origin if the UI is hosted separately
-  var STORAGE_KEY = 'xbsp_api_key';
-  var EXPECTED_WATERMARK = 'Provided by @yorichiiprime';
-  var REQUEST_TIMEOUT_MS = 60000;
-
-  // Browser-side HMAC secret. NOTE: anything shipped inside the page is public,
-  // so a passing check proves the response shape is consistent — it is NOT proof
-  // of authenticity. Treat it as an integrity/plumbing assertion only.
-  var HMAC_SECRET = 'dev-secret-change-in-prod';
-
-  /* =========================================================
-     Small utilities
-     ========================================================= */
-  var $ = function (id) { return document.getElementById(id); };
-
-  function el(tag, props, children) {
-    var node = document.createElement(tag);
-    props = props || {};
-    Object.keys(props).forEach(function (k) {
-      var v = props[k];
-      if (v === null || v === undefined || v === false) return;
-      if (k === 'class') node.className = v;
-      else if (k === 'text') node.textContent = String(v);
-      else if (k === 'dataset') { Object.keys(v).forEach(function (d) { node.dataset[d] = v[d]; }); }
-      else if (k.indexOf('on') === 0 && typeof v === 'function') node.addEventListener(k.slice(2).toLowerCase(), v);
-      else node.setAttribute(k, v === true ? '' : String(v));
-    });
-    (Array.isArray(children) ? children : [children]).forEach(function (c) {
-      if (c === null || c === undefined || c === false) return;
-      node.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
-    });
-    return node;
-  }
-
-  function clear(node) { while (node && node.firstChild) node.removeChild(node.firstChild); }
-
-  // Every server-provided string is rendered through textContent (see el()),
-  // so no response body can inject markup.
-  function setMsg(host, kind, text) {
-    if (!host) return;
-    clear(host);
-    if (!text) return;
-    host.appendChild(el('div', { class: 'status ' + kind, text: text }));
-  }
-
-  function toast(text, kind) {
-    var host = $('toasts');
-    if (!host) return;
-    var t = el('div', { class: 'toast ' + (kind || ''), text: text });
-    host.appendChild(t);
-    setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 3200);
-  }
-
-  function setBusy(btn, busy, busyLabel) {
-    if (!btn) return;
-    if (busy) {
-      btn.dataset.label = btn.textContent;
-      btn.disabled = true;
-      clear(btn);
-      btn.appendChild(el('span', { class: 'spin', 'aria-hidden': 'true' }));
-      btn.appendChild(document.createTextNode(busyLabel || 'Working…'));
-    } else {
-      btn.disabled = false;
-      clear(btn);
-      btn.appendChild(document.createTextNode(btn.dataset.label || 'Submit'));
-    }
-  }
-
-  function validEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(v || '').trim()); }
-
-  /* Safe storage wrappers — private modes / disabled storage must not break the page. */
-  function storeGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
-  function storeSet(k, v) { try { window.localStorage.setItem(k, v); return true; } catch (e) { return false; } }
-  function storeDel(k) { try { window.localStorage.removeItem(k); } catch (e) {} }
-
-  /* =========================================================
-     API client with full error handling
-     ========================================================= */
-  function ApiError(message, status, detail) {
-    this.name = 'ApiError';
-    this.message = message;
-    this.status = status;
-    this.detail = detail;
-  }
-  ApiError.prototype = Object.create(Error.prototype);
-
-  function detailOf(data) {
-    if (!data || typeof data !== 'object') return null;
-    return data.detail || data.message || data.error || null;
-  }
-
-  function friendlyStatus(status, data) {
-    var d = detailOf(data);
-    if (d) return typeof d === 'string' ? d : JSON.stringify(d);
-    switch (status) {
-      case 400: return 'The request was rejected as invalid. Check the fields and try again.';
-      case 401: return 'Not authorised — your credentials or API key are not valid.';
-      case 403: return 'Forbidden — this account is not allowed to perform that action.';
-      case 404: return 'Not found — that endpoint or resource does not exist.';
-      case 409: return 'Conflict — that resource already exists (an account for this email or device may already be registered).';
-      case 413: return 'Request too large — reduce the number of proxies and try again.';
-      case 422: return 'Validation failed — one or more fields are in the wrong format.';
-      case 429: return 'Rate limit reached. Wait a moment before trying again.';
-      case 500: return 'Server error (500). Please try again shortly.';
-      case 502: return 'Bad gateway (502). The service is temporarily unavailable.';
-      case 503: return 'Service unavailable (503). Please try again shortly.';
-      case 504: return 'Gateway timeout (504). The service took too long to respond.';
-      default:  return 'Unexpected response from the server (HTTP ' + status + ').';
-    }
-  }
-
-  async function api(endpoint, opts) {
-    opts = opts || {};
-    var method = opts.method || 'GET';
-    var body = (opts.body === undefined) ? null : opts.body;
-    var useAuth = opts.auth !== false;
-
-    var headers = { 'Accept': 'application/json' };
-    if (body !== null) headers['Content-Type'] = 'application/json';
-    if (useAuth && state.apiKey) headers['Authorization'] = 'Bearer ' + state.apiKey;
-
-    var ctrl = ('AbortController' in window) ? new AbortController() : null;
-    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, REQUEST_TIMEOUT_MS) : null;
-
-    var res;
-    try {
-      res = await fetch(API_BASE + endpoint, {
-        method: method,
-        headers: headers,
-        body: body !== null ? JSON.stringify(body) : null,
-        signal: ctrl ? ctrl.signal : undefined,
-        credentials: 'same-origin'
-      });
-    } catch (err) {
-      if (timer) clearTimeout(timer);
-      if (err && err.name === 'AbortError') {
-        throw new ApiError('The request timed out after ' + Math.round(REQUEST_TIMEOUT_MS / 1000) + 's. Please try again.', 0, 'timeout');
-      }
-      throw new ApiError('Network error — could not reach the server. Check your connection and try again.', 0, 'network');
-    }
-    if (timer) clearTimeout(timer);
-
-    var raw = '';
-    try { raw = await res.text(); } catch (e) { raw = ''; }
-
-    var data = null;
-    if (raw) {
-      try { data = JSON.parse(raw); }
-      catch (e) { data = { detail: raw.slice(0, 400) }; }
-    }
-
-    if (!res.ok) {
-      if (res.status === 401 && useAuth && state.apiKey) handleUnauthorized();
-      throw new ApiError(friendlyStatus(res.status, data), res.status, detailOf(data));
-    }
-    if (data === null) throw new ApiError('The server returned an empty response.', res.status, null);
-    return data;
-  }
-
-  /* =========================================================
-     State + session
-     ========================================================= */
-  var state = { apiKey: null, tier: null };
-
-  function showDashboard(on) {
-    $('dashboard').classList.toggle('hidden', !on);
-    $('auth-section').classList.toggle('hidden', on);
-  }
-
-  function signOut(message, kind) {
-    state.apiKey = null;
-    state.tier = null;
-    storeDel(STORAGE_KEY);
-    showDashboard(false);
-    selectTab('login');
-    setMsg($('auth-msg'), kind || 'info', message || 'Signed out.');
-  }
-
-  function handleUnauthorized() {
-    if (!state.apiKey) return;
-    state.apiKey = null;
-    storeDel(STORAGE_KEY);
-    showDashboard(false);
-    selectTab('login');
-    setMsg($('auth-msg'), 'error', 'Your session is no longer valid (the API key was rejected). Please log in again.');
-  }
-
-  function enterDashboard() {
-    setMsg($('auth-msg'), '', '');
-    showDashboard(true);
-    loadProfile();
-  }
-
-  function selectTab(which) {
-    var reg = which === 'register';
-    $('register-form').classList.toggle('hidden', !reg);
-    $('login-form').classList.toggle('hidden', reg);
-    $('tab-register').setAttribute('aria-selected', reg ? 'true' : 'false');
-    $('tab-login').setAttribute('aria-selected', reg ? 'false' : 'true');
-  }
-
-  /* =========================================================
-     Device fingerprint — canvas + screen + user agent
-     ========================================================= */
-  function fnv1a(str, seed) {
-    var h = (seed === undefined ? 0x811c9dc5 : seed) >>> 0;
-    for (var i = 0; i < str.length; i++) {
-      h ^= str.charCodeAt(i);
-      // h *= 16777619, kept in 32-bit range
-      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
-    }
-    return h >>> 0;
-  }
-  function toHex32(n) { return ('00000000' + (n >>> 0).toString(16)).slice(-8); }
-
-  function canvasSignal() {
-    try {
-      var c = document.createElement('canvas');
-      c.width = 220; c.height = 32;
-      var ctx = c.getContext ? c.getContext('2d') : null;
-      if (!ctx || typeof c.toDataURL !== 'function') return '';
-      ctx.textBaseline = 'top';
-      var g = ctx.createLinearGradient(0, 0, 220, 0);
-      g.addColorStop(0, '#f60'); g.addColorStop(0.5, '#069'); g.addColorStop(1, '#0f6');
-      ctx.fillStyle = g;
-      ctx.fillRect(0, 0, 220, 32);
-      ctx.fillStyle = 'rgba(255,255,255,0.72)';
-      ctx.font = '15px "Arial", sans-serif';
-      ctx.fillText('XboxChecker\u00A9\u{1F512}', 3, 9);
-      ctx.strokeStyle = 'rgba(120,186,176,0.9)';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(64, 16, 24, 0, Math.PI * 2, true); ctx.stroke();
-      ctx.globalCompositeOperation = 'multiply';
-      ctx.fillStyle = 'rgb(255,0,255)';
-      ctx.fillRect(90, 4, 40, 24);
-      return c.toDataURL();
-    } catch (e) {
-      return '';
-    }
-  }
-
-  function userAgentString() {
-    try {
-      if (navigator.userAgentData && navigator.userAgentData.brands && navigator.userAgentData.brands.length) {
-        return navigator.userAgentData.brands.map(function (b) { return b.brand + '/' + b.version; }).join(';')
-             + '|' + (navigator.userAgentData.platform || '');
-      }
-    } catch (e) {}
-    return navigator.userAgent || 'unknown-agent';
-  }
-
-  function computeFingerprint() {
-    var parts = [];
-    try {
-      parts.push(canvasSignal());
-      parts.push(userAgentString());
-      parts.push((screen && screen.width) || 0, (screen && screen.height) || 0, (screen && screen.colorDepth) || 0);
-      parts.push(window.devicePixelRatio || 1);
-      parts.push((navigator && navigator.language) || '');
-      parts.push((navigator && navigator.languages) ? navigator.languages.join(',') : '');
-      parts.push((navigator && navigator.platform) || '');
-      parts.push((navigator && navigator.hardwareConcurrency) || 0);
-      parts.push((navigator && navigator.maxTouchPoints) || 0);
-      try { parts.push(Intl.DateTimeFormat().resolvedOptions().timeZone || ''); } catch (e) {}
-    } catch (e) { /* every signal is optional */ }
-
-    var joined = parts.join('~');
-    var fp = toHex32(fnv1a(joined, 0x811c9dc5)) + toHex32(fnv1a(joined, 0x01000193));
-
-    // Guarantee a stable, non-empty value even if every signal above failed.
-    if (!fp || fp === '0000000000000000') {
-      fp = storeGet('xbsp_fp_fallback');
-      if (!fp) {
-        var rnd = '';
-        if (window.crypto && crypto.getRandomValues) {
-          var a = new Uint32Array(2); crypto.getRandomValues(a);
-          rnd = toHex32(a[0]) + toHex32(a[1]);
-        } else {
-          rnd = toHex32(Math.floor(Math.random() * 4294967295)) + toHex32(Math.floor(Math.random() * 4294967295));
-        }
-        fp = rnd;
-        storeSet('xbsp_fp_fallback', fp);
-      }
-    }
-    return fp;
-  }
-
-  function refreshFingerprint() {
-    var fp = computeFingerprint();
-    var input = $('reg-fp');
-    if (input) input.value = fp;
-    return fp;
-  }
-
-  /* =========================================================
-     Clipboard
-     ========================================================= */
-  async function copyText(text) {
-    if (!text) return false;
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text);
-        return true;
-      }
-    } catch (e) { /* fall through to legacy path */ }
-    try {
-      var ta = document.createElement('textarea');
-      ta.value = text;
-      ta.setAttribute('readonly', '');
-      ta.style.cssText = 'position:fixed;top:-1000px;opacity:0';
-      document.body.appendChild(ta);
-      ta.select();
-      var ok = document.execCommand('copy');
-      document.body.removeChild(ta);
-      return ok;
-    } catch (e) { return false; }
-  }
-
-  /* =========================================================
-     Canonical JSON + HMAC signature verification
-     ========================================================= */
-
-  // Deterministic serialisation: object keys sorted recursively, compact separators.
-  function canonicalJson(value) {
-    if (value === undefined) return 'null';
-    if (value === null) return 'null';
-    var t = typeof value;
-    if (t === 'number' || t === 'boolean') return JSON.stringify(value);
-    if (t === 'string') return JSON.stringify(value);
-    if (t === 'bigint') return JSON.stringify(String(value));
-    if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
-    if (t === 'object') {
-      return '{' + Object.keys(value).sort().map(function (k) {
-        return JSON.stringify(k) + ':' + canonicalJson(value[k]);
-      }).join(',') + '}';
-    }
-    return 'null';
-  }
-
-  function parseSignature(sig) {
-    var s = String(sig || '').trim();
-    if (!s) return null;
-    if (/^[0-9a-fA-F]+$/.test(s) && s.length % 2 === 0) {
-      var out = new Uint8Array(s.length / 2);
-      for (var i = 0; i < out.length; i++) out[i] = parseInt(s.substr(i * 2, 2), 16);
-      return out;
-    }
-    try {
-      var bin = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
-      var b = new Uint8Array(bin.length);
-      for (var j = 0; j < bin.length; j++) b[j] = bin.charCodeAt(j);
-      return b;
-    } catch (e) { return null; }
-  }
-
-  async function verifySignature(response) {
-    var signature = response && response.signature;
-    if (!signature || typeof signature !== 'string') {
-      return { state: 'na', label: 'No signature returned', detail: 'The response did not include a signature field.' };
-    }
-    if (!(window.crypto && window.crypto.subtle && window.isSecureContext)) {
-      return {
-        state: 'na',
-        label: 'Cannot verify here',
-        detail: 'Web Crypto (crypto.subtle) needs a secure context — open this page over HTTPS or http://localhost.'
-      };
-    }
-
-    var rest = {};
-    Object.keys(response).forEach(function (k) { if (k !== 'signature') rest[k] = response[k]; });
-    var watermark = (typeof rest.watermark === 'string' && rest.watermark) ? rest.watermark : EXPECTED_WATERMARK;
-
-    var sigBytes = parseSignature(signature);
-    if (!sigBytes) {
-      return { state: 'na', label: 'Unreadable signature', detail: 'The signature was not valid hex or base64.' };
-    }
-
-    var candidates = [
-      { label: 'sorted-keys JSON of payload + watermark', text: canonicalJson(Object.assign({}, rest, { watermark: watermark })) },
-      { label: 'sorted-keys JSON of payload only',        text: canonicalJson(rest) },
-      { label: 'insertion-order JSON of payload + watermark', text: JSON.stringify(Object.assign({}, rest, { watermark: watermark })) }
-    ];
-
-    try {
-      var enc = new TextEncoder();
-      var key = await crypto.subtle.importKey(
-        'raw', enc.encode(HMAC_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
-      );
-      for (var i = 0; i < candidates.length; i++) {
-        var ok = await crypto.subtle.verify('HMAC', key, sigBytes, enc.encode(candidates[i].text));
-        if (ok) return { state: 'valid', label: 'Signature valid', detail: 'Matched canonical form: ' + candidates[i].label };
-      }
-    } catch (e) {
-      return { state: 'na', label: 'Verification failed', detail: (e && e.message) ? e.message : 'Web Crypto error.' };
-    }
-
-    return {
-      state: 'invalid',
-      label: 'Signature mismatch',
-      detail: 'The HMAC did not match any expected canonical form — the payload may have been altered, or the shared secret differs.'
-    };
-  }
-
-  function sigPill(v) {
-    var cls = v.state === 'valid' ? 'ok' : (v.state === 'invalid' ? 'bad' : 'na');
-    var icon = v.state === 'valid' ? '✅' : (v.state === 'invalid' ? '❌' : '⚪');
-    var pill = el('span', { class: 'pill ' + cls }, [icon + ' ' + v.label]);
-    var wrap = el('span', {}, [pill]);
-    if (v.detail) {
-      wrap.appendChild(document.createTextNode(' '));
-      wrap.appendChild(el('span', { class: 'hint', text: v.detail }));
-    }
-    return wrap;
-  }
-
-  /* =========================================================
-     Auth flows
-     ========================================================= */
-  async function register(ev) {
-    ev.preventDefault();
-    var btn = $('btn-register');
-    var msg = $('auth-msg');
-    var email = $('reg-email').value.trim();
-    var password = $('reg-pass').value;
-    var fp = $('reg-fp').value.trim() || refreshFingerprint();
-
-    if (!validEmail(email)) { setMsg(msg, 'error', 'Please enter a valid email address.'); $('reg-email').focus(); return; }
-    if (!password || password.length < 8) { setMsg(msg, 'error', 'Password must be at least 8 characters.'); $('reg-pass').focus(); return; }
-    if (!fp) { setMsg(msg, 'error', 'Could not generate a device fingerprint. Please reload the page.'); return; }
-
-    setBusy(btn, true, 'Creating account…');
-    setMsg(msg, '', '');
-    try {
-      var data = await api('/auth/register', {
-        method: 'POST',
-        auth: false,
-        body: { email: email, password: password, device_fingerprint: fp }
-      });
-      var key = data.api_key || data.access_token || data.key;
-      if (!key) throw new ApiError('Registration succeeded but no API key was returned.', 200, null);
-      if (!storeSet(STORAGE_KEY, key)) {
-        setMsg(msg, 'warn', 'Account created, but this browser blocked local storage — you will need to log in again on your next visit.');
-      }
-      state.apiKey = key;
-      setMsg(msg, 'success', 'Account created. Welcome!');
-      enterDashboard();
-    } catch (err) {
-      setMsg(msg, 'error', err.message || 'Registration failed.');
-    } finally {
-      setBusy(btn, false);
-    }
-  }
-
-  async function login(ev) {
-    ev.preventDefault();
-    var btn = $('btn-login');
-    var msg = $('auth-msg');
-    var email = $('login-email').value.trim();
-    var password = $('login-pass').value;
-
-    if (!validEmail(email)) { setMsg(msg, 'error', 'Please enter a valid email address.'); $('login-email').focus(); return; }
-    if (!password) { setMsg(msg, 'error', 'Please enter your password.'); $('login-pass').focus(); return; }
-
-    setBusy(btn, true, 'Signing in…');
-    setMsg(msg, '', '');
-    try {
-      var data = await api('/auth/login', { method: 'POST', auth: false, body: { email: email, password: password } });
-      // The dashboard is keyed on the API key; accept either field name defensively.
-      var key = data.api_key || data.access_token || data.key;
-      if (!key) throw new ApiError('Login succeeded but no API key was returned.', 200, null);
-      storeSet(STORAGE_KEY, key);
-      state.apiKey = key;
-      if (data.tier) state.tier = data.tier;
-      $('login-pass').value = '';
-      setMsg(msg, 'success', 'Welcome back!');
-      enterDashboard();
-    } catch (err) {
-      setMsg(msg, 'error', err.message || 'Login failed.');
-    } finally {
-      setBusy(btn, false);
-    }
-  }
-
-  /* =========================================================
-     Profile / dashboard
-     ========================================================= */
-  async function loadProfile(opts) {
-    opts = opts || {};
-    if (!state.apiKey) return;
-    $('api-key').textContent = state.apiKey;
-
-    if (!opts.silent) setMsg($('dash-msg'), 'info', 'Loading profile…');
-    try {
-      var data = await api('/user/me');
-      var tier = String(data.tier || 'unknown').toLowerCase();
-      state.tier = tier;
-      var badge = $('tier-badge');
-      badge.textContent = tier.toUpperCase();
-      badge.className = 'badge ' + (['free', 'premium', 'pro'].indexOf(tier) >= 0 ? tier : 'unknown');
-
-      var used = Number(data.daily_usage != null ? data.daily_usage : 0);
-      var limit = Number(data.daily_limit != null ? data.daily_limit : 0);
-      if (!isFinite(used)) used = 0;
-      $('usage').textContent = limit > 0
-        ? used + ' / ' + limit + ' checks today'
-        : used + ' checks today (no limit reported)';
-      var pct = limit > 0 ? Math.max(0, Math.min(100, (used / limit) * 100)) : 0;
-      $('usage-bar').style.width = pct + '%';
-
-      if (opts.message) setMsg($('dash-msg'), 'success', opts.message);
-      else setMsg($('dash-msg'), '', '');
-    } catch (err) {
-      if (err.status === 401) return;   // handleUnauthorized() already reset the UI
-      setMsg($('dash-msg'), 'error', 'Could not load your profile: ' + (err.message || 'unknown error'));
-    }
-  }
-
-  async function doRevoke() {
-    var btn = $('btn-revoke-yes');
-    setBusy(btn, true, 'Regenerating…');
-    try {
-      var data = await api('/user/key/revoke', { method: 'POST' });
-      var key = data.api_key || data.key;
-      if (!key) throw new ApiError('The server did not return a new API key.', 200, null);
-
-      // Drop the old key from storage and memory before adopting the new one.
-      storeDel(STORAGE_KEY);
-      state.apiKey = key;
-      storeSet(STORAGE_KEY, key);
-
-      $('api-key').textContent = key;
-      $('revoke-confirm').classList.add('hidden');
-      setMsg($('dash-msg'), 'success', 'API key regenerated. The previous key is no longer valid.');
-      toast('New API key generated', 'success');
-      loadProfile({ silent: true });
-    } catch (err) {
-      setMsg($('dash-msg'), 'error', err.message || 'Could not regenerate the API key.');
-    } finally {
-      setBusy(btn, false);
-      clear(btn);
-      btn.appendChild(document.createTextNode('Yes, regenerate'));
-    }
-  }
-
-  /* =========================================================
-     Check
-     ========================================================= */
-  function parseProxies(raw) {
-    var seen = {};
-    return String(raw || '')
-      .split(/\r?\n/)
-      .map(function (p) { return p.trim(); })
-      .filter(function (p) {
-        if (!p || p.charAt(0) === '#') return false;
-        if (seen[p]) return false;
-        seen[p] = true;
-        return true;
-      })
-      .map(function (p) {
-        // Normalize proxy format
-        // Remove protocol prefixes
-        var normalized = p;
-        var lower = p.toLowerCase();
-        
-        // Handle socks5:// or socks4:// or http:// or https://
-        if (lower.startsWith('socks5://')) {
-          normalized = p.substring('socks5://'.length);
-        } else if (lower.startsWith('socks4://')) {
-          normalized = p.substring('socks4://'.length);
-        } else if (lower.startsWith('http://')) {
-          normalized = p.substring('http://'.length);
-        } else if (lower.startsWith('https://')) {
-          normalized = p.substring('https://'.length);
-        }
-        
-        // Now normalize user:pass@host:port or host:port
-        // Check if it has user:pass@ format
-        var atIndex = normalized.indexOf('@');
-        if (atIndex !== -1) {
-          var authPart = normalized.substring(0, atIndex);
-          var hostPart = normalized.substring(atIndex + 1);
-          // authPart is user:pass, hostPart is host:port
-          var colonIndex = authPart.indexOf(':');
-          if (colonIndex !== -1) {
-            var user = authPart.substring(0, colonIndex);
-            var pass = authPart.substring(colonIndex + 1);
-            // hostPart might be host:port
-            var hostColon = hostPart.indexOf(':');
-            if (hostColon !== -1) {
-              var host = hostPart.substring(0, hostColon);
-              var port = hostPart.substring(hostColon + 1);
-              // Return as ip:port format (backend will add http://)
-              return host + ':' + port;
-            }
-            // No port in host part, just return as is
-            return hostPart;
-          }
-        }
-        
-        // No @ sign, could be host:port or just host or user:pass
-        var colonIndex = normalized.indexOf(':');
-        if (colonIndex !== -1) {
-          // It's host:port format
-          return normalized;
-        }
-        
-        // Just a host, return as is (backend will handle)
-        return normalized;
-      });
-  }
-  function updateProxyCount() {
-    var n = parseProxies($('check-proxies').value).length;
-    $('proxy-count').textContent = n === 0 ? 'No proxies — direct connection' : n + (n === 1 ? ' proxy' : ' proxies') + ' queued';
-  }
-
-  /* Map checker statuses to badge styles. Handles the live API
-     (PREMIUM/FREE/BAD/2FA/BANNED/TIMEOUT/ERROR) and legacy hit/bad. */
-  function statusBadgeClass(s) {
-    var t = String(s == null ? '' : s).toLowerCase();
-    if (t === 'hit' || t === 'premium') return 'premium';
-    if (t === 'free' || t === 'miss') return 'free';
-    if (t === '2fa' || t === 'pro') return 'pro';
-    return 'unknown';
-  }
-
-  function statusHint(s) {
-    var t = String(s == null ? '' : s).toUpperCase();
-    var hints = {
-      'PREMIUM': 'Active Game Pass / subscription found.',
-      'HIT': 'Active Game Pass / subscription found.',
-      'FREE': 'Valid account, no active subscription found.',
-      'BAD': 'Invalid credentials or account does not exist.',
-      '2FA': 'Valid credentials, but two-factor approval is required.',
-      'BANNED': 'Account is banned or suspended.',
-      'TIMEOUT': 'The check timed out — try again or add proxies.',
-      'ERROR': 'The check could not complete.'
-    };
-    return hints[t] || '';
-  }
-
-  async function runCheck(ev) {
-    ev.preventDefault();
-    var btn = $('btn-check');
-    var host = $('result');
-    var email = $('check-email').value.trim();
-    var password = $('check-pass').value;
-    var proxies = parseProxies($('check-proxies').value);
-
-    clear(host);
-    if (!email) { setMsg($('dash-msg'), 'error', 'Enter the account email to check.'); $('check-email').focus(); return; }
-    if (!password) { setMsg($('dash-msg'), 'error', 'Enter the account password to check.'); $('check-pass').focus(); return; }
-    setMsg($('dash-msg'), '', '');
-
-    setBusy(btn, true, 'Checking…');
-    host.appendChild(el('div', { class: 'status info', text: 'Running check…' }));
-
-    var data;
-    try {
-      data = await api('/check', { method: 'POST', body: { email: email, password: password, proxies: proxies } });
-    } catch (err) {
-      clear(host);
-      host.appendChild(el('div', { class: 'status error' }, [
-        el('strong', { text: 'Check failed. ' }),
-        document.createTextNode(err.message || 'Unknown error.')
-      ]));
-      return;
-    } finally {
-      setBusy(btn, false);
-    }
-
-    try {
-      clear(host);
-
-      var payload = {};
-      Object.keys(data).forEach(function (k) { if (k !== 'signature' && k !== 'watermark') payload[k] = data[k]; });
-
-      var statusValue = data.status;
-      var statusText = (statusValue === null || statusValue === undefined)
-        ? 'unknown'
-        : (typeof statusValue === 'object' ? JSON.stringify(statusValue) : String(statusValue));
-
-      var watermarkText = (typeof data.watermark === 'string' && data.watermark) ? data.watermark : '(none returned)';
-      var watermarkMatches = watermarkText.trim() === EXPECTED_WATERMARK;
-
-      var dl = el('dl', { class: 'kv' });
-      dl.appendChild(el('dt', { text: 'Status' }));
-      var statusCell = [el('span', { class: 'badge ' + statusBadgeClass(statusText), text: statusText })];
-      var hint = statusHint(statusText);
-      if (hint) {
-        statusCell.push(document.createTextNode(' '));
-        statusCell.push(el('span', { class: 'hint', text: hint }));
-      }
-      dl.appendChild(el('dd', {}, statusCell));
-
-      // Parsed account details (gamertag, gamerscore, Game Pass plan).
-      var details = (data.data && typeof data.data === 'object') ? data.data : null;
-      if (!details && data.gamertag) details = { gamertag: data.gamertag };  // legacy shape
-      if (details) {
-        if (details.gamertag) {
-          dl.appendChild(el('dt', { text: 'Gamertag' }));
-          dl.appendChild(el('dd', {}, [el('strong', { text: String(details.gamertag) })]));
-        }
-        if (details.gamerscore !== null && details.gamerscore !== undefined && details.gamerscore !== '') {
-          dl.appendChild(el('dt', { text: 'Gamerscore' }));
-          dl.appendChild(el('dd', { text: String(details.gamerscore) }));
-        }
-        if (details.gamepass) {
-          dl.appendChild(el('dt', { text: 'Game Pass' }));
-          dl.appendChild(el('dd', {}, [el('span', { class: 'badge premium', text: String(details.gamepass) })]));
-        }
-        if (Array.isArray(details.subscriptions) && details.subscriptions.length) {
-          dl.appendChild(el('dt', { text: 'Subscriptions' }));
-          dl.appendChild(el('dd', { text: details.subscriptions.join(', ') }));
-        }
-      }
-      if (typeof data.duration === 'number' && isFinite(data.duration)) {
-        dl.appendChild(el('dt', { text: 'Duration' }));
-        dl.appendChild(el('dd', { text: data.duration.toFixed(2) + 's' }));
-      }
-      if (data.rate_limit_remaining !== null && data.rate_limit_remaining !== undefined) {
-        dl.appendChild(el('dt', { text: 'Remaining today' }));
-        dl.appendChild(el('dd', { text: String(data.rate_limit_remaining) }));
-      }
-      if (data.error) {
-        dl.appendChild(el('dt', { text: 'Error' }));
-        dl.appendChild(el('dd', {}, [el('code', { text: String(data.error) })]));
-      }
-
-      dl.appendChild(el('dt', { text: 'Watermark' }));
-      dl.appendChild(el('dd', {}, [
-        el('span', { class: 'watermark', text: watermarkText }),
-        document.createTextNode(' '),
-        el('span', {
-          class: 'pill ' + (watermarkMatches ? 'ok' : 'bad'),
-          text: (watermarkMatches ? '✅ matches expected' : '❌ expected “' + EXPECTED_WATERMARK + '”')
-        })
-      ]));
-
-      dl.appendChild(el('dt', { text: 'Signature' }));
-      dl.appendChild(el('dd', {}, [el('code', { text: String(data.signature || '(none)') })]));
-
-      dl.appendChild(el('dt', { text: 'Client-side HMAC' }));
-      var sigCell = el('dd');
-      host.appendChild(dl);
-
-      var ver = await verifySignature(data);
-      sigCell.appendChild(sigPill(ver));
-      dl.appendChild(sigCell);
-
-      host.appendChild(el('h3', { text: 'Raw payload', style: 'margin-top:1rem' }));
-      host.appendChild(el('pre', { text: JSON.stringify(payload, null, 2) }));
-
-      loadProfile({ silent: true });
-    } catch (renderErr) {
-      clear(host);
-      host.appendChild(el('div', { class: 'status error' }, [
-        el('strong', { text: 'The check completed, but the result could not be displayed. ' }),
-        el('code', { text: JSON.stringify(data) })
-      ]));
-    }
-  }
-
-  /* =========================================================
-     Admin panel
-     ========================================================= */
-  var ADMIN_COLUMNS = ['email', 'tier', 'daily_usage', 'daily_limit', 'total_checks', 'created_at', 'last_check_at', 'api_key', 'device_fingerprint'];
-  var SENSITIVE = { api_key: true, device_fingerprint: true, password: true, password_hash: true };
-
-  function mask(v) {
-    var s = String(v == null ? '' : v);
-    if (s.length <= 8) return '••••';
-    return s.slice(0, 4) + '…' + s.slice(-4);
-  }
-
-  function openAdmin() {
-    $('admin-section').classList.remove('hidden');
-    $('admin-section').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    var k = $('admin-key');
-    if (k) setTimeout(function () { k.focus(); }, 250);
-  }
-
-  async function loadAdmin(ev) {
-    ev.preventDefault();
-    var btn = $('btn-admin');
-    var msg = $('admin-msg');
-    var out = $('admin-output');
-    var adminKey = $('admin-key').value.trim();
-
-    clear(out);
-    if (!adminKey) { setMsg(msg, 'error', 'Enter the admin API key first.'); $('admin-key').focus(); return; }
-
-    # Determine which tab is active
-    var activeTab = document.querySelector('.admin-tab.active');
-    var targetId = activeTab ? activeTab.getAttribute('aria-controls') : 'admin-users';
-    setBusy(btn, true, 'Loading ' + (targetId === 'admin-status' ? 'status…' : 'users…'));
-    setMsg(msg, '', '');
-
-    var res;
-    try {
-      var ctrl = ('AbortController' in window) ? new AbortController() : null;
-      var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, REQUEST_TIMEOUT_MS) : null;
-      var endpoint = targetId === 'admin-status' ? '/admin/status' : '/admin/users';
-      res = await fetch(API_BASE + endpoint, {
-        headers: { 'X-Admin-Key': adminKey, 'Accept': 'application/json' },
-        signal: ctrl ? ctrl.signal : undefined,
-        credentials: 'same-origin'
-      });
-      if (timer) clearTimeout(timer);
-    } catch (err) {
-      var timedOut = err && err.name === 'AbortError';
-      setMsg(msg, 'error', timedOut
-        ? 'The request timed out. Please try again.'
-        : 'Network error — could not reach /admin/' + endpoint + '.');
-      return;
-    } finally {
-      setBusy(btn, false);
-
-    if (!res.ok) {
-      var data = {};
-      try { data = await res.json(); } catch (e) { data = {}; }
-      setMsg(msg, 'error', 'Server error: ' + (data.detail || res.statusText));
-      return;
-    }
-    var data = null;
-    try { data = await res.json(); } catch (e) { data = null; }
-
-    if (targetId === 'admin-status') {
-      # Render status dashboard
-      var outContent = $('admin-status-content');
-      var loading = $('admin-status-loading');
-      if (data && data.total_users !== undefined) {
-        loading.hidden = true;
-        outContent.innerHTML = '';
-        # Total users
-        outContent.innerHTML += '<p><strong>Total Users:</strong> ' + data.total_users + '</p>';
-        outContent.innerHTML += '<p><strong>Active Users:</strong> ' + data.active_users + '</p>';
-        outContent.innerHTML += '<p><strong>Checks Today:</strong> ' + data.total_checks_today + '</p>';
-        # Tier distribution
-        if (data.tier_distribution && data.tier_distribution.length > 0) {
-          outContent.innerHTML += '<p><strong>Tier Distribution:</strong></p>';
-          data.tier_distribution.forEach(function (t) {
-            outContent.innerHTML += '<p>' + t.tier + ': ' + t.user_count + ' users, ' + t.total_checks + ' total checks</p>';
-          });
-        }
-        # Recent activity
-        outContent.innerHTML += '<p><strong>Recent Activity:</strong></p>';
-        var recent = data.recent_activity || [];
-        recent.slice(0, 5).forEach(function (a) {
-          var time = a.timestamp ? new Date(a.timestamp).toLocaleString() : 'unknown';
-          outContent.innerHTML += '<p>• ' + (a.email || 'unknown') + ' (' + a.tier + ') - ' + a.status + ' at ' + time + '</p>';
-        });
-        if (recent.length === 0) {
-          outContent.innerHTML += '<p>No recent activity.</p>';
-        }
-      } else {
-        loading.hidden = false;
-        outContent.innerHTML = '<p>No status data available.</p>';
-      }
-      return;
-    }
-
-    # Existing users rendering code (unchanged)
-    var users = Array.isArray(data) ? data
-      : (Array.isArray(data.users) ? data.users
-      : (Array.isArray(data.items) ? data.items
-      : (Array.isArray(data.data) ? data.data : null)));
-
-    if (!users) {
-      setMsg(msg, 'info', 'Response received, but it did not contain a recognisable user list.');
-      out.appendChild(el('pre', { text: JSON.stringify(data, null, 2) }));
-      return;
-    }
-    if (users.length === 0) {
-      setMsg(msg, 'info', 'No users found.');
-      return;
-    }
-
-    # Choose columns that actually exist in the payload.
-    var present = {};
-    users.forEach(function (u) {
-      if (u && typeof u === 'object') Object.keys(u).forEach(function (k) { present[k] = true; });
-    });
-    var cols = ADMIN_COLUMNS.filter(function (c) { return present[c]; });
-    Object.keys(present).forEach(function (k) {
-      if (cols.indexOf(k) < 0 && cols.length < 9) cols.push(k);
-    });    }
-
-    var raw = '';
-    try { raw = await res.text(); } catch (e) { raw = ''; }
-    var data = null;
-    if (raw) {
-      try { data = JSON.parse(raw); } catch (e) { data = null; }
-    }
-
-    if (!res.ok) {
-      setMsg(msg, 'error', friendlyStatus(res.status, data));
-      return;
-    }
-    if (data === null) { setMsg(msg, 'error', 'The server returned a response that is not valid JSON.'); return; }
-
-    var users = Array.isArray(data) ? data
-      : (Array.isArray(data.users) ? data.users
-      : (Array.isArray(data.items) ? data.items
-      : (Array.isArray(data.data) ? data.data : null)));
-
-    if (!users) {
-      setMsg(msg, 'info', 'Response received, but it did not contain a recognisable user list.');
-      out.appendChild(el('pre', { text: JSON.stringify(data, null, 2) }));
-      return;
-    }
-    if (users.length === 0) {
-      setMsg(msg, 'info', 'No users found.');
-      return;
-    }
-
-    // Choose columns that actually exist in the payload.
-    var present = {};
-    users.forEach(function (u) {
-      if (u && typeof u === 'object') Object.keys(u).forEach(function (k) { present[k] = true; });
-    });
-    var cols = ADMIN_COLUMNS.filter(function (c) { return present[c]; });
-    Object.keys(present).forEach(function (k) {
-      if (cols.indexOf(k) < 0 && cols.length < 9) cols.push(k);
-    });
-    if (cols.length === 0) cols = ['value'];
-
-    var table = el('table');
-    table.appendChild(el('caption', { text: users.length + (users.length === 1 ? ' user' : ' users') }));
-    var thead = el('thead');
-    var hr = el('tr');
-    cols.forEach(function (c) { hr.appendChild(el('th', { scope: 'col', text: c.replace(/_/g, ' ') })); });
-    thead.appendChild(hr);
-    table.appendChild(thead);
-
-    var tbody = el('tbody');
-    users.slice(0, 500).forEach(function (u) {
-      var tr = el('tr');
-      cols.forEach(function (c) {
-        var v = (u && typeof u === 'object') ? u[c] : u;
-        var text;
-        if (v === null || v === undefined || v === '') text = '—';
-        else if (SENSITIVE[c]) text = mask(v);
-        else if (typeof v === 'object') text = JSON.stringify(v);
-        else text = String(v);
-        tr.appendChild(el('td', { class: c === 'email' ? 'email' : null, text: text }));
-      });
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody);
-
-    var scroller = el('div', { class: 'table-scroll' }, [table]);
-    out.appendChild(scroller);
-    if (users.length > 500) {
-      out.appendChild(el('p', { class: 'hint', text: 'Showing the first 500 of ' + users.length + ' users.' }));
-    }
-    setMsg(msg, 'success', 'Loaded ' + users.length + (users.length === 1 ? ' user' : ' users') + '. Sensitive fields are masked.');
-  }
-
-  /* =========================================================
-     Wiring
-     ========================================================= */
-  function wire() {
-    $('tab-register').addEventListener('click', function () { selectTab('register'); setMsg($('auth-msg'), '', ''); });
-    $('tab-login').addEventListener('click', function () { selectTab('login'); setMsg($('auth-msg'), '', ''); });
-
-    $('register-form').addEventListener('submit', register);
-    $('login-form').addEventListener('submit', login);
-    $('check-form').addEventListener('submit', runCheck);
-    $('admin-form').addEventListener('submit', loadAdmin);
-
-    $('fp-refresh').addEventListener('click', function () {
-      refreshFingerprint();
-      toast('Fingerprint regenerated', 'success');
-    });
-
-    $('btn-copy-key').addEventListener('click', async function () {
-      var ok = await copyText(state.apiKey || $('api-key').textContent);
-      toast(ok ? 'API key copied to clipboard' : 'Copy failed — select the key manually', ok ? 'success' : 'error');
-    });
-
-    $('btn-logout').addEventListener('click', function () {
-      signOut('You have been signed out on this device.');
-      toast('Signed out');
-    });
-
-    $('btn-refresh').addEventListener('click', function () { loadProfile(); });
-
-    $('btn-revoke').addEventListener('click', function () {
-      $('revoke-confirm').classList.remove('hidden');
-      $('btn-revoke-yes').focus();
-    });
-    $('btn-revoke-no').addEventListener('click', function () {
-      $('revoke-confirm').classList.add('hidden');
-    });
-    $('btn-revoke-yes').addEventListener('click', doRevoke);
-
-    $('check-proxies').addEventListener('input', updateProxyCount);
-
-    $('btn-eye').addEventListener('click', function () {
-      var input = $('check-pass');
-      var show = input.type === 'password';
-      input.type = show ? 'text' : 'password';
-      $('btn-eye').textContent = show ? '🙈' : '👁';
-      $('btn-eye').setAttribute('aria-label', show ? 'Hide password' : 'Show password');
-    });
-
-    $('admin-trigger').addEventListener('click', openAdmin);
-    $('btn-admin-close').addEventListener('click', function () {
-      $('admin-section').classList.add('hidden');
-    });
-
-    document.addEventListener('keydown', function (e) {
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
-        e.preventDefault();
-        var sec = $('admin-section');
-        if (sec.classList.contains('hidden')) openAdmin();
-        else sec.classList.add('hidden');
-      }
-      if (e.key === 'Escape' && !$('revoke-confirm').classList.contains('hidden')) {
-        $('revoke-confirm').classList.add('hidden');
-      }
-    });
-
-    // Escape clears any open confirmation.
-    window.addEventListener('error', function (e) {
-      toast('Unexpected error: ' + (e.message || 'unknown'), 'error');
-    });
-    window.addEventListener('unhandledrejection', function (e) {
-      var m = (e.reason && e.reason.message) ? e.reason.message : String(e.reason || 'unknown');
-      toast('Unexpected error: ' + m, 'error');
-      e.preventDefault();
-    });
-  }
-
-  function init() {
-    try {
-      refreshFingerprint();
-      wire();
-      updateProxyCount();
-      selectTab('register');
-
-      var saved = storeGet(STORAGE_KEY);
-      if (saved) {
-        state.apiKey = saved;
-        showDashboard(true);
-        loadProfile();           // a rejected key triggers handleUnauthorized() -> back to login
-      } else {
-        showDashboard(false);
-      }
-    } catch (e) {
-      // Never leave a blank screen: surface the failure instead.
-      var host = $('auth-msg');
-      if (host) setMsg(host, 'error', 'The console failed to start: ' + ((e && e.message) || e));
-    }
-  }
-
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
-  else init();
+  const items = 'XBOX CHECKER ✦ API + DOCS ONLY ✦ NO LOGIN  NO REGISTER ✦ NO DATABASE  POST /CHECK ✦ HMAC-SHA256 SIGNED ✦ EDUCATIONAL ONLY ✦ ';
+  document.getElementById('marquee').textContent = items.repeat(4);
+  document.getElementById('year').textContent = new Date().getFullYear();
 })();
+
+/* ===== live API chip ===== */
+(async function () {
+  const dot = document.getElementById('api-dot');
+  const text = document.getElementById('api-chip-text');
+  try {
+    const r = await fetch('/health', { cache: 'no-store' });
+    const j = await r.json();
+    if (r.ok && j.status === 'ok') { dot.classList.add('on'); text.textContent = 'API ONLINE · v' + j.version; }
+    else { dot.classList.add('off'); text.textContent = 'API ERROR · ' + r.status; }
+  } catch (e) {
+    dot.classList.add('off'); text.textContent = 'API OFFLINE · is the server running?';
+  }
+})();
+
+/* ===== 3D tilt (fine pointers, motion allowed) ===== */
+(function () {
+  if (!matchMedia('(prefers-reduced-motion: no-preference)').matches) return;
+  if (!matchMedia('(pointer: fine)').matches) return;
+  document.querySelectorAll('.flip').forEach(card => {
+    card.addEventListener('pointermove', e => {
+      const r = card.getBoundingClientRect();
+      const x = (e.clientX - r.left) / r.width - 0.5;
+      const y = (e.clientY - r.top) / r.height - 0.5;
+      card.style.transform = 'perspective(900px) rotateX(' + (-y * 10).toFixed(2) + 'deg) rotateY(' + (x * 10).toFixed(2) + 'deg)';
+    });
+    card.addEventListener('pointerleave', () => { card.style.transform = ''; });
+  });
+})();
+
+/* ===== copy helper ===== */
+async function copyText(t, btn, doneMsg) {
+  try {
+    await navigator.clipboard.writeText(t);
+  } catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = t; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } catch (e2) { /* ignore */ }
+    ta.remove();
+  }
+  if (btn) {
+    const old = btn.textContent;
+    btn.textContent = doneMsg || 'Copied ✓';
+    setTimeout(() => { btn.textContent = old; }, 1200);
+  }
+}
+document.querySelectorAll('.codeblock').forEach(block => {
+  const btn = block.querySelector('.copybtn');
+  if (!btn) return;
+  btn.addEventListener('click', () => copyText(block.querySelector('pre').textContent, btn));
+});
+
+/* ===== console ===== */
+const STATUS_MEANING = {
+  PREMIUM: 'Active subscription found — details below.',
+  FREE: 'Account is valid, no active subscription.',
+  BAD: 'Credentials rejected — wrong password or account does not exist.',
+  '2FA': 'Account requires two-step verification.',
+  BANNED: 'Account is suspended or banned.',
+  TIMEOUT: 'Upstream request timed out — see error details.',
+  ERROR: 'Something failed inside the checker — see error details.'
+};
+
+let lastPayload = null;
+let lastResponse = null;
+
+function el(id) { return document.getElementById(id); }
+
+function showFormError(msg) {
+  el('form-error').textContent = msg;
+  el('form-error').hidden = false;
+}
+
+function renderResult(body) {
+  lastResponse = body;
+  el('result').hidden = false;
+  const word = el('status-word');
+  word.textContent = body.status || 'UNKNOWN';
+  word.className = 'st-' + String(body.status || 'ERROR').replace(/[^A-Za-z0-9]/g, '');
+  el('status-sub').textContent = (STATUS_MEANING[body.status] || '') + (body.error ? ' ' + body.error : '');
+
+  const grid = el('result-grid');
+  grid.innerHTML = '';
+  const stat = (k, v, cls) => {
+    const d = document.createElement('div');
+    d.className = 'stat' + (cls ? ' ' + cls : '');
+    d.innerHTML = '<div class="k"></div><div class="v"></div>';
+    d.querySelector('.k').textContent = k;
+    d.querySelector('.v').textContent = v;
+    grid.appendChild(d);
+    return d;
+  };
+  const data = body.data || {};
+  if (body.status === 'PREMIUM' || body.status === 'FREE') {
+    if (data.gamertag !== undefined) stat('Gamertag', data.gamertag || '—');
+    if (data.gamerscore !== undefined) stat('Gamerscore', data.gamerscore);
+    if (data.gamepass) stat('Game pass', data.gamepass);
+    if (Array.isArray(data.subscriptions) && data.subscriptions.length) {
+      const d = stat('Subscriptions', '', 'chips-holder');
+      const chips = document.createElement('div');
+      chips.className = 'chips';
+      data.subscriptions.forEach(s => {
+        const c = document.createElement('span');
+        c.className = 'chip'; c.textContent = s;
+        chips.appendChild(c);
+      });
+      d.querySelector('.v').textContent = '';
+      d.appendChild(chips);
+    }
+  }
+  stat('Duration', Number(body.duration).toFixed(2) + ' s');
+  if (body.error) stat('Error', body.error);
+
+  el('out-watermark').textContent = body.watermark || '—';
+  el('out-signature').textContent = body.signature || '—';
+  el('verify-line').textContent = 'VERIFYING SIGNATURE…';
+  el('verify-line').className = 'verify';
+  el('result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  const secret = el('f-secret').value.trim();
+  if (!secret) {
+    el('verify-line').textContent = '— Verification skipped: no WATERMARK_SECRET set —';
+    el('verify-line').className = 'verify skip';
+    return;
+  }
+  verifySignature(body, secret).then(ok => {
+    el('verify-line').textContent = ok ? '✓ SIGNATURE VERIFIED — payload is authentic' : '✗ SIGNATURE MISMATCH — tampered, or wrong secret';
+    el('verify-line').className = 'verify ' + (ok ? 'ok' : 'bad');
+  }).catch(() => {
+    el('verify-line').textContent = '— Verification unavailable in this browser (Web Crypto needs HTTPS/localhost) —';
+    el('verify-line').className = 'verify skip';
+  });
+}
+
+el('check-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  el('form-error').hidden = true;
+  el('result').hidden = true;
+  const btn = el('check-btn');
+  const pill = el('check-status');
+  btn.disabled = true; pill.hidden = false; pill.textContent = 'RUNNING…';
+  try {
+    const payload = { email: el('f-email').value.trim(), password: el('f-pass').value };
+    const lines = el('f-proxies').value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    if (lines.length) payload.proxies = lines;
+    lastPayload = payload;
+
+    const res = await fetch('/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    let body = {};
+    try { body = await res.json(); } catch (e2) { /* non-JSON */ }
+    if (!res.ok) {
+      let msg = typeof body.detail === 'string' ? body.detail
+        : Array.isArray(body.detail) ? body.detail.map(d => d.msg || JSON.stringify(d)).join(' · ')
+        : 'HTTP ' + res.status;
+      showFormError('HTTP ' + res.status + ' — ' + msg);
+      return;
+    }
+    renderResult(body);
+  } catch (err) {
+    showFormError('Network error — is the API running? ' + (err && err.message || err));
+  } finally {
+    btn.disabled = false;
+    pill.hidden = true;
+  }
+});
+
+el('copy-json').addEventListener('click', e => {
+  if (lastResponse) copyText(JSON.stringify(lastResponse, null, 2), e.currentTarget);
+});
+el('copy-curl').addEventListener('click', e => {
+  if (!lastPayload) return;
+  const origin = location.origin === 'null' ? '' : location.origin;
+  const cmd = 'curl -s ' + origin + '/check -H "Content-Type: application/json" -d ' +
+    "'" + JSON.stringify(lastPayload).replace(/'/g, "'\\''") + "'";
+  copyText(cmd, e.currentTarget);
+});
+el('copy-sig').addEventListener('click', e => {
+  if (lastResponse && lastResponse.signature) copyText(lastResponse.signature, e.currentTarget);
+});
 </script>
 </body>
 </html>

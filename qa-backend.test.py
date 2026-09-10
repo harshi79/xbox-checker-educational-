@@ -1,28 +1,19 @@
-"""Backend smoke tests — real FastAPI app + real (SQLite) database.
+"""Backend smoke tests — real FastAPI app, stubbed Xbox network.
 
 Run:  python3 qa-backend.test.py
 Requires: pip install -r requirements.txt
 
-Uses an isolated temp SQLite file (no Turso needed) and stubs only the
-external Xbox network call.
+No database, no login, no registration — the app is API-only now.
+Everything is real except the external Xbox/Microsoft HTTP calls, which
+are stubbed so the suite runs offline.
 """
 
-import os
 import sys
-import tempfile
-
-_tmp = tempfile.NamedTemporaryFile(prefix="xbox_qa_", suffix=".db", delete=False)
-_tmp.close()
-os.environ["SQLITE_PATH"] = _tmp.name
-os.environ.pop("TURSO_DATABASE_URL", None)
-os.environ["ADMIN_API_KEY"] = "qa-admin-key"
-os.environ["WATERMARK_SECRET"] = "qa-secret"
-os.environ["JWT_SECRET"] = "qa-jwt"
-
-from fastapi.testclient import TestClient  # noqa: E402
 
 import api.checker as checker_mod  # noqa: E402
+from api import watermark as wm  # noqa: E402
 from api.index import app  # noqa: E402
+from fastapi.testclient import TestClient  # noqa: E402
 
 PASS = 0
 FAIL = 0
@@ -57,111 +48,100 @@ checker_mod.check_account_async = _fake_check
 
 client = TestClient(app)
 
-section("A. Health & root")
+section("A. Health, root & docs")
 r = client.get("/health")
 ok("GET /health -> 200", r.status_code == 200, r.text[:200])
-ok("health reports sqlite backend", r.json().get("db_backend") == "sqlite", r.text[:200])
-ok("health db is up", r.json().get("db") == "up", r.text[:200])
+ok("health reports status ok", r.json().get("status") == "ok", r.text[:200])
+ok("health reports version", bool(r.json().get("version")), r.text[:200])
+
 r = client.get("/")
-ok("GET / -> 200 HTML console", r.status_code == 200 and "Xbox Checker" in r.text, str(r.status_code))
+ok("GET / -> 200 HTML docs+console", r.status_code == 200 and "XBOX CHECKER" in r.text, str(r.status_code))
+ok("page content-type is html", r.headers.get("content-type", "").startswith("text/html"), str(r.headers.get("content-type")))
+ok("page contains live console form", 'id="check-form"' in r.text, "console form missing")
+ok("page documents POST /check", "POST /check" in r.text, "docs section missing")
+ok("page links Swagger /docs", 'href="/docs"' in r.text, "swagger link missing")
 
-section("B. Registration")
-r = client.post("/auth/register", json={
-    "email": "qa@example.com", "password": "password123", "device_fingerprint": "qa-device-001",
-})
-ok("register -> 201 with api_key", r.status_code == 201 and bool(r.json().get("api_key")), r.text[:300])
-key = r.json().get("api_key", "")
-ok("api_key has xbsp_ prefix", key.startswith("xbsp_"), key)
+r = client.get("/docs")
+ok("GET /docs -> 200", r.status_code == 200, str(r.status_code))
+r = client.get("/openapi.json")
+ok("GET /openapi.json -> 200", r.status_code == 200, str(r.status_code))
+ok("openapi lists /check", "/check" in r.json().get("paths", {}), str(list(r.json().get("paths", {}))))
 
-r = client.post("/auth/register", json={
-    "email": "qa@example.com", "password": "password123", "device_fingerprint": "qa-device-002",
-})
-ok("duplicate email -> 409", r.status_code == 409, r.text[:200])
-r = client.post("/auth/register", json={
-    "email": "other@example.com", "password": "password123", "device_fingerprint": "qa-device-001",
-})
-ok("duplicate device -> 409", r.status_code == 409, r.text[:200])
-r = client.post("/auth/register", json={
-    "email": "bad-email", "password": "short", "device_fingerprint": "x",
-})
-ok("invalid payload -> 422", r.status_code == 422, r.text[:200])
+section("B. Login/register fully removed")
+for path, method in [
+    ("/auth/register", "post"),
+    ("/auth/login", "post"),
+    ("/user/me", "get"),
+    ("/user/key/revoke", "post"),
+    ("/admin/users", "get"),
+    ("/admin/status", "get"),
+]:
+    r = getattr(client, method)(path)
+    ok(f"{method.upper()} {path} -> 404 (removed)", r.status_code == 404, r.text[:200])
 
-section("C. Login & profile")
-r = client.post("/auth/login", json={"email": "qa@example.com", "password": "password123"})
-ok("login -> 200 with api_key", r.status_code == 200 and r.json().get("api_key") == key, r.text[:300])
-r = client.post("/auth/login", json={"email": "qa@example.com", "password": "wrongpass1"})
-ok("wrong password -> 401", r.status_code == 401, r.text[:200])
-
-r = client.get("/user/me", headers={"Authorization": f"Bearer {key}"})
-ok("/user/me -> 200 with usage", r.status_code == 200 and r.json().get("daily_limit") == 100, r.text[:300])
-r = client.get("/user/me", headers={"Authorization": "Bearer nope"})
-ok("bad key -> 401 (not 422/500)", r.status_code == 401, r.text[:200])
-r = client.get("/user/me")
-ok("missing auth -> 401 (not 422/500)", r.status_code == 401, r.text[:200])
-
-section("D. Check endpoint (stubbed Xbox network)")
-r = client.post("/check", headers={"Authorization": f"Bearer {key}"},
-                json={"email": "player@example.com", "password": "secretpw", "proxies": []})
+section("C. Check endpoint (stubbed Xbox network, NO auth needed)")
+r = client.post("/check", json={"email": "player@example.com", "password": "secretpw"})
 body = r.json() if r.status_code == 200 else {}
 ok("/check -> 200 PREMIUM", r.status_code == 200 and body.get("status") == "PREMIUM", r.text[:400])
-ok("watermark present", body.get("watermark") == "Provided by @yorichiiprime", r.text[:300])
-ok("signature present", isinstance(body.get("signature"), str) and len(body["signature"]) == 64, r.text[:300])
-ok("rate_limit_remaining present", isinstance(body.get("rate_limit_remaining"), int), r.text[:300])
-
-from api import watermark as wm  # noqa: E402
+ok("no Authorization header required", r.status_code == 200, r.text[:200])
+ok("gamertag in data", body.get("data", {}).get("gamertag") == "QATester", r.text[:300])
+ok("watermark present", body.get("watermark") == wm.WATERMARK_TEXT, r.text[:300])
+ok("signature present (64 hex)", isinstance(body.get("signature"), str) and len(body["signature"]) == 64, r.text[:300])
 ok("server-side signature verifies", wm.verify_signature(dict(body)), "hmac mismatch")
 
-r = client.get("/user/me", headers={"Authorization": f"Bearer {key}"})
-ok("usage incremented to 1", r.json().get("daily_usage") == 1, r.text[:200])
+r = client.post("/check", json={"email": "a@b.co", "password": "pw", "proxies": ["1.2.3.4:8080"]})
+ok("proxies list accepted", r.status_code == 200, r.text[:300])
 
-r = client.post("/check", headers={"Authorization": f"Bearer {key}"},
-                json={"email": "", "password": "x"})
-ok("empty email -> 400/422 (not 500)", r.status_code in (400, 422), r.text[:200])
+r = client.post("/check", json={"email": "", "password": "x"})
+ok("empty email -> 422 (not 500)", r.status_code == 422, r.text[:200])
+r = client.post("/check", json={"email": "a@b.c"})
+ok("missing password -> 422 (not 500)", r.status_code == 422, r.text[:200])
+r = client.post("/check", json={})
+ok("empty body -> 422 (not 500)", r.status_code == 422, r.text[:200])
+r = client.post("/check", json={"email": "a@b.c", "password": "x",
+                                "proxies": [f"1.1.1.{i}:8080" for i in range(25)]})
+ok("too many proxies -> 413 (not 500)", r.status_code == 413, r.text[:200])
 
-r = client.post("/check", headers={"Authorization": f"Bearer {key}"},
-                json={"email": "a@b.c", "password": "x", "proxies": [f"http://h:{i}" for i in range(60)]})
-ok("too many proxies -> 413/422 (not 500)", r.status_code in (413, 422), r.text[:200])
-
-section("E. Key rotation")
-r = client.post("/user/key/revoke", headers={"Authorization": f"Bearer {key}"})
-new_key = r.json().get("api_key", "") if r.status_code == 200 else ""
-ok("revoke -> 200 new key", r.status_code == 200 and new_key and new_key != key, r.text[:200])
-r = client.get("/user/me", headers={"Authorization": f"Bearer {key}"})
-ok("old key -> 401", r.status_code == 401, r.text[:200])
-r = client.get("/user/me", headers={"Authorization": f"Bearer {new_key}"})
-ok("new key -> 200", r.status_code == 200, r.text[:200])
-
-section("F. Admin")
-r = client.get("/admin/users")
-ok("no admin key -> 403 (not 500)", r.status_code == 403, r.text[:200])
-r = client.get("/admin/users", headers={"X-Admin-Key": "wrong"})
-ok("wrong admin key -> 403 (not 500)", r.status_code == 403, r.text[:200])
-r = client.get("/admin/users", headers={"X-Admin-Key": "qa-admin-key"})
-users = r.json().get("users", []) if r.status_code == 200 else []
-ok("admin lists users", r.status_code == 200 and any(u.get("email") == "qa@example.com" for u in users), r.text[:400])
-has_cols = users and "daily_usage" in users[0] and "total_checks" in users[0]
-ok("usage/total_checks columns present", bool(has_cols), str(users[0].keys()) if users else "no users")
-uid = next((u["id"] for u in users if u.get("email") == "qa@example.com"), None)
-r = client.patch(f"/admin/users/{uid}?tier=premium", headers={"X-Admin-Key": "qa-admin-key"})
-ok("admin sets tier -> 200", r.status_code == 200, r.text[:200])
-r = client.get("/user/me", headers={"Authorization": f"Bearer {new_key}"})
-ok("tier is premium with limit 1000", r.json().get("tier") == "premium" and r.json().get("daily_limit") == 1000, r.text[:200])
-r = client.patch("/admin/users/999999?tier=pro", headers={"X-Admin-Key": "qa-admin-key"})
-ok("unknown user -> 404", r.status_code == 404, r.text[:200])
-
-section("G. Checker input validation (no network)")
+section("D. Checker input validation (no network)")
 res = checker_mod.check_account("", "")
 ok("empty creds -> ERROR dict, no raise", res.get("status") == "ERROR", str(res))
 res = checker_mod.check_account("a@b.co", "pw", proxies="not-a-list")
 ok("bad proxies type -> ERROR dict, no raise", res.get("status") == "ERROR", str(res))
+res = checker_mod.check_account("a" * 400, "pw")
+ok("oversized email -> ERROR dict, no raise", res.get("status") == "ERROR", str(res))
+
+section("E. Proxy normalisation (no network)")
+pm = checker_mod.ProxyManager(["1.2.3.4:8080", "http://5.6.7.8:3128",
+                               "user:pass:9.9.9.9:1080", "socks5://10.0.0.1:1080"])
+ok("has_proxies true", pm.has_proxies())
+for raw in ["1.2.3.4:8080", "http://5.6.7.8:3128", "user:pass:9.9.9.9:1080", "socks5://10.0.0.1:1080"]:
+    p = pm.get()
+    ok(f"{raw!r} -> http proxy dict", isinstance(p, dict) and p.get("http", "").startswith("http://"), str(p))
+    pm.mark_bad(raw)
+ok("all bad -> None", pm.get() is None)
+
+pm_empty = checker_mod.ProxyManager([])
+ok("no proxies -> None", pm_empty.get() is None and not pm_empty.has_proxies())
+
+# Each format in isolation (random rotation makes shared pools ambiguous).
+expected = {
+    "1.2.3.4:8080": "http://1.2.3.4:8080",
+    "http://5.6.7.8:3128": "http://5.6.7.8:3128",
+    "user:pass:9.9.9.9:1080": "http://9.9.9.9:1080",
+    "socks5://10.0.0.1:1080": "http://10.0.0.1:1080",
+    "user:pass@10.0.0.1:1080": "http://user:pass@10.0.0.1:1080",
+    "@3.3.3.3:1": "http://3.3.3.3:1",
+}
+for raw, want in expected.items():
+    got = checker_mod.ProxyManager([raw]).get()
+    ok(f"isolated {raw!r} -> {want!r}", isinstance(got, dict) and got.get("http") == want, str(got))
 
 print("\n" + "=" * 60)
-print(f"  \x1b[1m{PASS} passed, {FAIL} failed\x1b[0m   (backend, real app + sqlite)")
+print(f"  \x1b[1m{PASS} passed, {FAIL} failed\x1b[0m   (backend, real FastAPI app, offline)")
 if FAILURES:
     print("\n  Failures:")
     for f in FAILURES:
         print(f"   - {f}")
 print("=" * 60)
 
-os.unlink(_tmp.name)
 sys.exit(1 if FAIL else 0)
